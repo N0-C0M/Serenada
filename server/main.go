@@ -24,11 +24,18 @@ func main() {
 		}
 	}
 
-	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		serveWs(hub, w, r)
-	})
+	// Rate Limiters
+	// WS: 10 connections per minute per IP
+	wsLimiter := NewIPLimiter(10.0/60.0, 5)
 
-	http.HandleFunc("/api/turn-credentials", enableCors(handleTurnCredentials))
+	// API: 10 requests per minute per IP
+	apiLimiter := NewIPLimiter(10.0/60.0, 5)
+
+	http.HandleFunc("/ws", rateLimitMiddleware(wsLimiter, func(w http.ResponseWriter, r *http.Request) {
+		serveWs(hub, w, r)
+	}))
+
+	http.HandleFunc("/api/turn-credentials", rateLimitMiddleware(apiLimiter, enableCors(handleTurnCredentials)))
 
 	port := os.Getenv("PORT")
 	if port == "" {
