@@ -25,6 +25,7 @@ interface SignalingContextValue {
     endRoom: () => void;
     sendMessage: (type: string, payload?: any, to?: string) => void;
     lastMessage: SignalingMessage | null;
+    subscribeToMessages: (cb: (msg: SignalingMessage) => void) => () => void;
     error: string | null;
 }
 
@@ -44,6 +45,8 @@ export const SignalingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const [roomState, setRoomState] = useState<RoomState | null>(null);
     const [lastMessage, setLastMessage] = useState<SignalingMessage | null>(null);
     const [error, setError] = useState<string | null>(null);
+
+    const listenersRef = useRef<((msg: SignalingMessage) => void)[]>([]);
 
     const wsRef = useRef<WebSocket | null>(null);
     const currentRoomIdRef = useRef<string | null>(null);
@@ -109,6 +112,7 @@ export const SignalingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 }
 
                 setLastMessage(msg);
+                listenersRef.current.forEach(listener => listener(msg));
             } catch (e) {
                 console.error('Failed to parse message', e);
             }
@@ -157,6 +161,13 @@ export const SignalingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         sendMessage('end_room');
     }
 
+    const subscribeToMessages = (cb: (msg: SignalingMessage) => void) => {
+        listenersRef.current.push(cb);
+        return () => {
+            listenersRef.current = listenersRef.current.filter(l => l !== cb);
+        };
+    };
+
     return (
         <SignalingContext.Provider value={{
             isConnected,
@@ -167,6 +178,7 @@ export const SignalingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             endRoom,
             sendMessage,
             lastMessage,
+            subscribeToMessages,
             error
         }}>
             {children}

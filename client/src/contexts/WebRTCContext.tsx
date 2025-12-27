@@ -27,7 +27,7 @@ export const useWebRTC = () => {
 };
 
 export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const { sendMessage, lastMessage, roomState, clientId, isConnected } = useSignaling();
+    const { sendMessage, roomState, clientId, isConnected, subscribeToMessages } = useSignaling();
 
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
     const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
@@ -45,34 +45,40 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     // Handle incoming signaling messages
     useEffect(() => {
-        if (!lastMessage) return;
+        const handleMessage = async (msg: any) => {
+            const { type, payload } = msg; // Use msg from callback
+            console.log(`[WebRTC] Received message: ${type}`, payload);
 
-        const handleMessage = async () => {
-            const { type, payload } = lastMessage;
-
-            switch (type) {
-                case 'offer':
-                    // payload has { from, sdp }
-                    if (payload && payload.sdp) {
-                        await handleOffer(payload.sdp);
-                    }
-                    break;
-                case 'answer':
-                    // payload has { from, sdp }
-                    if (payload && payload.sdp) {
-                        await handleAnswer(payload.sdp);
-                    }
-                    break;
-                case 'ice':
-                    // payload has { from, candidate }
-                    if (payload && payload.candidate) {
-                        await handleIce(payload.candidate);
-                    }
-                    break;
+            try {
+                switch (type) {
+                    case 'offer':
+                        if (payload && payload.sdp) {
+                            await handleOffer(payload.sdp);
+                        } else {
+                            console.warn('[WebRTC] Offer received without SDP');
+                        }
+                        break;
+                    case 'answer':
+                        if (payload && payload.sdp) {
+                            await handleAnswer(payload.sdp);
+                        }
+                        break;
+                    case 'ice':
+                        if (payload && payload.candidate) {
+                            await handleIce(payload.candidate);
+                        }
+                        break;
+                }
+            } catch (err) {
+                console.error(`[WebRTC] Error handling message ${type}:`, err);
             }
         };
-        handleMessage();
-    }, [lastMessage]);
+
+        const unsubscribe = subscribeToMessages(handleMessage);
+        return () => {
+            unsubscribe();
+        };
+    }, [subscribeToMessages]); // Dependency on subscribeToMessages (stable)
 
     // Logic to initiate offer if we are HOST and have 2 participants
     useEffect(() => {
@@ -166,40 +172,66 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
 
     const createOffer = async () => {
-        const pc = getOrCreatePC();
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        sendMessage('offer', { sdp: offer.sdp });
+        try {
+            console.log('[WebRTC] Creating offer...');
+            const pc = getOrCreatePC();
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            console.log('[WebRTC] Sending offer');
+            sendMessage('offer', { sdp: offer.sdp });
+        } catch (err) {
+            console.error('[WebRTC] Error creating offer:', err);
+        }
     };
 
+
     const handleOffer = async (sdp: string) => {
-        const pc = getOrCreatePC();
-        // Check for glare/collision? Protocol says Host is Offerer. 
-        // If we receive an offer, we must be the answerer (or logic failed).
-        await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp }));
+        try {
+            console.log('[WebRTC] Handling offer...');
+            const pc = getOrCreatePC();
+            await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp }));
+            console.log('[WebRTC] Remote description set (offer)');
 
-        // Process buffered ICE
-        while (iceBufferRef.current.length > 0) {
-            const c = iceBufferRef.current.shift();
-            if (c) pc.addIceCandidate(c);
+            // Process buffered ICE
+            while (iceBufferRef.current.length > 0) {
+                const c = iceBufferRef.current.shift();
+                if (c) {
+                    console.log('[WebRTC] Adding buffered ICE candidate');
+                    await pc.addIceCandidate(c);
+                }
+            }
+
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            console.log('[WebRTC] Sending answer');
+            sendMessage('answer', { sdp: answer.sdp });
+        } catch (err) {
+            console.error('[WebRTC] Error handling offer:', err);
         }
-
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        sendMessage('answer', { sdp: answer.sdp });
     };
 
     const handleAnswer = async (sdp: string) => {
-        const pc = getOrCreatePC();
-        await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp }));
+        try {
+            console.log('[WebRTC] Handling answer...');
+            const pc = getOrCreatePC();
+            await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp }));
+            console.log('[WebRTC] Remote description set (answer)');
+        } catch (err) {
+            console.error('[WebRTC] Error handling answer:', err);
+        }
     };
 
     const handleIce = async (candidate: RTCIceCandidateInit) => {
-        const pc = getOrCreatePC();
-        if (pc.remoteDescription) {
-            await pc.addIceCandidate(candidate);
-        } else {
-            iceBufferRef.current.push(candidate);
+        try {
+            const pc = getOrCreatePC();
+            if (pc.remoteDescription) {
+                await pc.addIceCandidate(candidate);
+            } else {
+                console.log('[WebRTC] Buffering ICE candidate');
+                iceBufferRef.current.push(candidate);
+            }
+        } catch (err) {
+            console.error('[WebRTC] Error handling ICE:', err);
         }
     };
 
