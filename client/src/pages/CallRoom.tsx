@@ -10,7 +10,7 @@ const CallRoom: React.FC = () => {
     const {
         joinRoom,
         leaveRoom,
-        endRoom,
+
         roomState,
         clientId,
         isConnected,
@@ -67,11 +67,7 @@ const CallRoom: React.FC = () => {
         navigate('/');
     };
 
-    const handleEndCall = () => {
-        endRoom();
-        // endRoom triggers room_ended which updates state usually.
-        // We can also just leave locally.
-    };
+
 
     const toggleMute = () => {
         if (localStream) {
@@ -120,7 +116,7 @@ const CallRoom: React.FC = () => {
 
     // Render In-Call
     const otherParticipant = roomState?.participants?.find(p => p.cid !== clientId);
-    const isHost = roomState?.hostCid === clientId;
+
 
     return (
         <div className="call-container">
