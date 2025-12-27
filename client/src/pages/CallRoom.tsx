@@ -162,11 +162,6 @@ const CallRoom: React.FC = () => {
                 <button onClick={handleLeave} className="btn-control btn-leave">
                     <PhoneOff />
                 </button>
-                {isHost && (
-                    <button onClick={handleEndCall} className="btn-control btn-end">
-                        End for All
-                    </button>
-                )}
             </div>
         </div>
     );

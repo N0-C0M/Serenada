@@ -83,25 +83,19 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     // Logic to initiate offer if we are HOST and have 2 participants
     useEffect(() => {
         if (roomState && roomState.participants && roomState.participants.length === 2 && roomState.hostCid === clientId) {
-            // Check if we already have a connection or need to start
-            // Ideally we check connectionState, but for MVP, if we are fresh, start.
-            // Problem: StrictMode might trigger twice. RTCPeerConnection usually has states.
-            // If we haven't negotiated, start.
-            // We can check pc.signalingState
+            // ... (existing logic)
             const pc = getOrCreatePC();
             if (pc.signalingState === 'stable') {
-                // We initiate offer.
-                // But wait, "stable" is also the state after negotiation.
-                // We need to know if we SHOULD start.
-                // For MVP, if we just joined (or other just joined) and we are host.
-                // Maybe rely on "negotiationneeded" event?
-                // But managing perfect negotiation is hard.
-                // Let's stick to: if we add tracks, negotiationneeded fires.
-                // Or manually trigger createOffer.
                 createOffer();
             }
+        } else if (roomState && roomState.participants && roomState.participants.length < 2) {
+            // Check if we need to cleanup. If we have a PC or remote stream, clean it.
+            if (pcRef.current || remoteStream) {
+                console.log('[WebRTC] Participant left, cleaning up connection');
+                cleanupPC();
+            }
         }
-    }, [roomState, clientId]);
+    }, [roomState, clientId, remoteStream]);
 
 
     const getOrCreatePC = () => {
