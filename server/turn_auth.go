@@ -121,11 +121,35 @@ func handleTurnCredentials(store *TurnTokenStore) http.HandlerFunc {
 			URIs: []string{
 				"stun:" + host,
 				"turn:" + host,
+				"turns:" + host + ":5349",
+				"turns:" + host + ":5349?transport=tcp",
 			},
 			TTL: ttl,
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(config)
+	}
+}
+
+// TODO: Remove this
+func handleDiagnosticToken(store *TurnTokenStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost && r.Method != http.MethodGet {
+			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		if store == nil {
+			http.Error(w, "TURN token store unavailable", http.StatusServiceUnavailable)
+			return
+		}
+
+		token, expires := store.Issue(getClientIP(r))
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"token":   token,
+			"expires": expires.Unix(),
+		})
 	}
 }

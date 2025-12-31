@@ -48,6 +48,7 @@ func main() {
 	}))
 
 	http.HandleFunc("/api/turn-credentials", rateLimitMiddleware(apiLimiter, enableCors(handleTurnCredentials(turnTokenStore))))
+	http.HandleFunc("/api/diagnostic-token", rateLimitMiddleware(apiLimiter, enableCors(handleDiagnosticToken(turnTokenStore))))
 
 	http.HandleFunc("/device-check", handleDeviceCheck)
 

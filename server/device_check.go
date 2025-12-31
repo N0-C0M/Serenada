@@ -195,6 +195,26 @@ const deviceCheckHTML = `
                 <span id="ws-support">-</span>
             </div>
         </div>
+
+            <div class="card-title">
+                ICE Connectivity (STUN/TURN)
+                <div style="display: flex; gap: 0.5rem;">
+                    <button class="btn" id="ice-test-btn" onclick="runIceTest()" style="margin: 0; padding: 0.25rem 0.5rem; font-size: 0.75rem;">Run Full Test</button>
+                    <button class="btn btn-secondary" id="ice-test-turns-btn" onclick="runIceTest(true)" style="margin: 0; padding: 0.25rem 0.5rem; font-size: 0.75rem; background-color: #6366f1;">Run TURNS Only</button>
+                </div>
+            </div>
+            <div class="item">
+                <span class="label">STUN Status</span>
+                <span id="stun-status" class="status-badge">NOT TESTED</span>
+            </div>
+            <div class="item">
+                <span class="label">TURN Status</span>
+                <span id="turn-status" class="status-badge">NOT TESTED</span>
+            </div>
+            <div id="ice-log" style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 1rem; max-height: 150px; overflow-y: auto; font-family: monospace;">
+                Click "Run ICE Test" to verify STUN/TURN servers.
+            </div>
+        </div>
     </div>
 
     <script>
@@ -204,6 +224,142 @@ const deviceCheckHTML = `
             if (!el) return;
             el.className = 'status-badge status-' + status;
             el.textContent = text || status.toUpperCase();
+        }
+
+        function logIce(msg) {
+            var logEl = document.getElementById('ice-log');
+            if (!logEl) return;
+            var div = document.createElement('div');
+            div.textContent = '[' + new Date().toLocaleTimeString() + '] ' + msg;
+            logEl.appendChild(div);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function runIceTest(turnsOnly) {
+            var btn = document.getElementById('ice-test-btn');
+            var btnT = document.getElementById('ice-test-turns-btn');
+            if (btn) btn.disabled = true;
+            if (btnT) btnT.disabled = true;
+
+            updateStatus('stun-status', 'warning', 'TESTING...');
+            updateStatus('turn-status', 'warning', 'TESTING...');
+            var logEl = document.getElementById('ice-log');
+            if (logEl) logEl.innerHTML = '';
+            
+            logIce('Requesting diagnostic token...');
+            
+            fetch('/api/diagnostic-token', { method: 'POST' })
+                .then(function(res) {
+                    if (!res.ok) throw new Error('Failed to fetch diagnostic token: ' + res.status);
+                    return res.json();
+                })
+                .then(function(data) {
+                    var token = data.token;
+                    logIce('Token received. Fetching TURN credentials...');
+                    return fetch('/api/turn-credentials?token=' + token);
+                })
+                .then(function(res) {
+                    if (!res.ok) throw new Error('Failed to fetch credentials: ' + res.status);
+                    return res.json();
+                })
+                .then(function(config) {
+                    if (turnsOnly) {
+                        config.uris = config.uris.filter(function(u) { return u.startsWith('turns:'); });
+                        logIce('Filtered for TURNS only.');
+                    }
+                    if (config.uris.length === 0) {
+                        throw new Error('No compatible ICE servers found for this test mode.');
+                    }
+                    logIce('Credentials received. Starting ICE gathering...');
+                    testIceConfig(config);
+                })
+                .catch(function(err) {
+                    logIce('Error: ' + err.message);
+                    updateStatus('stun-status', 'error', 'FAILED');
+                    updateStatus('turn-status', 'error', 'FAILED');
+                    if (btn) btn.disabled = false;
+                    if (btnT) btnT.disabled = false;
+                });
+        }
+
+        function testIceConfig(config) {
+            logIce('ICE Servers: ' + JSON.stringify(config.uris));
+            
+            var iceServers = [];
+            if (config.uris) {
+                config.uris.forEach(function(url) {
+                    var server = { urls: url };
+                    if (url.indexOf('stun:') !== 0) {
+                        server.username = config.username;
+                        server.credential = config.password;
+                    }
+                    iceServers.push(server);
+                });
+            }
+            
+            var pc = new RTCPeerConnection({ iceServers: iceServers });
+
+            var stunFound = false;
+            var turnFound = false;
+            var timeout = setTimeout(function() {
+                logIce('ICE Gathering timed out (10s)');
+                finish();
+            }, 10000);
+
+            var isTurnsTest = turnsOnly;
+            pc.onicecandidate = function(event) {
+                if (event.candidate) {
+                    var c = event.candidate.candidate;
+                    var parts = c.split(' ');
+                    var ip = parts[4];
+                    var port = parts[5];
+                    var type = event.candidate.type;
+                    var proto = event.candidate.protocol;
+                    var relayProto = parts[2].toLowerCase(); // e.g. 'udp', 'tcp'
+                    
+                    var logMsg = 'Found candidate: ' + type + ' (' + proto + ') -> ' + ip + ':' + port;
+                    if (type === 'relay') {
+                        logMsg += ' [relay-proto: ' + relayProto + ']';
+                        turnFound = true;
+                        updateStatus('turn-status', 'ok', isTurnsTest ? 'TURNS SUCCESS' : 'SUCCESS');
+                    }
+                    logIce(logMsg);
+                    
+                    if (event.candidate.type === 'srflx') {
+                        stunFound = true;
+                        updateStatus('stun-status', 'ok', 'SUCCESS');
+                    }
+                } else {
+                    logIce('ICE Gathering complete.');
+                    if (isTurnsTest && turnFound) {
+                        logIce('NOTE: "relay (udp)" with TURNS means you connected via TLS, but the server is relaying media via UDP (ideal).');
+                    }
+                    finish();
+                }
+            };
+
+            // Trigger ICE gathering
+            pc.createDataChannel('test');
+            pc.createOffer().then(function(offer) {
+                return pc.setLocalDescription(offer);
+            }).catch(function(err) {
+                logIce('Offer error: ' + err.message);
+                finish();
+            });
+
+            function finish() {
+                clearTimeout(timeout);
+                if (!stunFound) updateStatus('stun-status', 'error', 'FAILED');
+                if (!turnFound) updateStatus('turn-status', 'error', 'FAILED');
+                
+                var btn = document.getElementById('ice-test-btn');
+                var btnT = document.getElementById('ice-test-turns-btn');
+                if (btn) btn.disabled = false;
+                if (btnT) btnT.disabled = false;
+                
+                // Cleanup
+                try { pc.close(); } catch(e) {}
+            }
         }
 
         function checkBrowser() {
@@ -330,6 +486,13 @@ const deviceCheckHTML = `
                 });
                 data += "\n";
             });
+            
+            // Add ICE log
+            var iceLog = document.getElementById('ice-log');
+            if (iceLog) {
+                data += "## ICE Connectivity Log\n";
+                data += iceLog.innerText.trim() + "\n";
+            }
 
             function fallbackCopy(text) {
                 var textArea = document.createElement("textarea");

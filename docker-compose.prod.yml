@@ -1,8 +1,10 @@
 services:
   coturn:
+    user: "root"
     network_mode: "host"
     volumes:
       - ./coturn/turnserver.prod.conf:/etc/coturn/turnserver.conf
+      - /etc/letsencrypt:/etc/letsencrypt
     command:
       - /usr/bin/turnserver
       - -c
