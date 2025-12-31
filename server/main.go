@@ -49,6 +49,8 @@ func main() {
 
 	http.HandleFunc("/api/turn-credentials", rateLimitMiddleware(apiLimiter, enableCors(handleTurnCredentials(turnTokenStore))))
 
+	http.HandleFunc("/device-check", handleDeviceCheck)
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
