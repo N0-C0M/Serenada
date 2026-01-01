@@ -121,7 +121,6 @@ func handleTurnCredentials(store *TurnTokenStore) http.HandlerFunc {
 			URIs: []string{
 				"stun:" + host,
 				"turn:" + host,
-				"turns:" + host + ":5349",
 				"turns:" + host + ":5349?transport=tcp",
 			},
 			TTL: ttl,
