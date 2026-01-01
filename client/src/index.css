@@ -133,22 +133,26 @@ body {
   overflow: hidden;
 }
 
-.video-remote-container {
+.video-remote-container.primary {
   width: 100%;
   height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
 }
 
 .video-remote {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  /* or contain */
 }
 
-.video-local-container {
+.video-local-container.pip,
+.video-remote-container.pip {
   position: absolute;
   bottom: 100px;
   /* Above controls */
@@ -166,10 +170,24 @@ body {
   z-index: 10;
   transform-origin: bottom right;
   transition: all 0.25s ease;
+  cursor: pointer;
+}
+
+.video-local-container.primary {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  background: black;
+  transition: all 0.25s ease;
 }
 
 @media (min-width: 768px) {
-  .video-local-container {
+
+  .video-local-container.pip,
+  .video-remote-container.pip {
     width: min(240px, 30vw);
     aspect-ratio: 4 / 3;
     /* Landscape on desktop */
@@ -208,7 +226,8 @@ body {
   pointer-events: none;
 }
 
-.controls-hidden .video-local-container {
+.controls-hidden .video-local-container.pip,
+.controls-hidden .video-remote-container.pip {
   bottom: 20px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
 }

@@ -11,6 +11,8 @@ interface WebRTCContextValue {
     remoteStream: MediaStream | null;
     startLocalMedia: () => Promise<void>;
     stopLocalMedia: () => void;
+    flipCamera: () => Promise<void>;
+    hasMultipleCameras: boolean;
     peerConnection: RTCPeerConnection | null;
 }
 
@@ -38,6 +40,28 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     // RTC Config State
     const [rtcConfig, setRtcConfig] = useState<RTCConfiguration | null>(null);
+    const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
+    const [hasMultipleCameras, setHasMultipleCameras] = useState(false);
+
+    // Detect multiple cameras
+    useEffect(() => {
+        const detectCameras = async () => {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const cameras = devices.filter(device => device.kind === 'videoinput');
+                setHasMultipleCameras(cameras.length > 1);
+            } catch (err) {
+                console.warn('[WebRTC] Failed to enumerate devices', err);
+            }
+        };
+        detectCameras();
+        // Also listen for device changes
+        navigator.mediaDevices?.addEventListener?.('devicechange', detectCameras);
+        return () => {
+            navigator.mediaDevices?.removeEventListener?.('devicechange', detectCameras);
+        };
+    }, []);
 
     // Ensure media is stopped when the provider unmounts
     useEffect(() => {
@@ -269,7 +293,10 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                 requestingMediaRef.current = false;
                 return;
             }
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: facingMode },
+                audio: true
+            });
 
             // If we navigated away or requested stop while the prompt was open, immediately clean up
             if (cancelMediaRef.current || unmountedRef.current) {
@@ -303,6 +330,48 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
         requestingMediaRef.current = false;
     }, []);
+
+    const flipCamera = async () => {
+        if (!hasMultipleCameras) return;
+
+        const newMode = facingMode === 'user' ? 'environment' : 'user';
+        setFacingMode(newMode);
+
+        if (!localStream) return;
+
+        try {
+            // Stop old video tracks
+            const oldVideoTrack = localStream.getVideoTracks()[0];
+            if (oldVideoTrack) oldVideoTrack.stop();
+
+            // Get new stream with new facing mode
+            const newStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: newMode },
+                audio: false // Keep same audio if possible, but simpler to just get new video
+            });
+
+            const newVideoTrack = newStream.getVideoTracks()[0];
+
+            // Replace track in peer connection
+            if (pcRef.current) {
+                const senders = pcRef.current.getSenders();
+                const videoSender = senders.find(s => s.track?.kind === 'video');
+                if (videoSender) {
+                    await videoSender.replaceTrack(newVideoTrack);
+                }
+            }
+
+            // Update local stream
+            const combinedStream = new MediaStream([
+                newVideoTrack,
+                ...localStream.getAudioTracks()
+            ]);
+            setLocalStream(combinedStream);
+        } catch (err) {
+            console.error('[WebRTC] Failed to flip camera', err);
+            showToast('error', 'Failed to flip camera');
+        }
+    };
 
     const createOffer = async () => {
         try {
@@ -379,6 +448,8 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             remoteStream,
             startLocalMedia,
             stopLocalMedia,
+            flipCamera,
+            hasMultipleCameras,
             peerConnection: pcRef.current
         }}>
             {children}

@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useSignaling } from '../contexts/SignalingContext';
 import { useWebRTC } from '../contexts/WebRTCContext';
 import { useToast } from '../contexts/ToastContext';
-import { Mic, MicOff, Video, VideoOff, PhoneOff, Copy, AlertCircle } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, PhoneOff, Copy, AlertCircle, RotateCcw } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import { saveCall } from '../utils/callHistory';
 import { useTranslation } from 'react-i18next';
@@ -25,6 +25,8 @@ const CallRoom: React.FC = () => {
     const {
         startLocalMedia,
         stopLocalMedia,
+        flipCamera,
+        hasMultipleCameras,
         localStream,
         remoteStream
     } = useWebRTC();
@@ -34,6 +36,7 @@ const CallRoom: React.FC = () => {
     const [isMuted, setIsMuted] = useState(false);
     const [isCameraOff, setIsCameraOff] = useState(false);
     const [areControlsVisible, setAreControlsVisible] = useState(true);
+    const [isLocalLarge, setIsLocalLarge] = useState(false);
 
     const localVideoRef = useRef<HTMLVideoElement>(null);
     const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -280,11 +283,14 @@ const CallRoom: React.FC = () => {
 
     return (
         <div
-            className={`call-container ${areControlsVisible ? '' : 'controls-hidden'}`}
+            className={`call-container ${areControlsVisible ? '' : 'controls-hidden'} ${isLocalLarge ? 'local-large' : ''}`}
             onPointerUp={handleScreenTap}
         >
-            {/* Remote Video (Full Screen) */}
-            <div className="video-remote-container">
+            {/* Primary Video (Full Screen) */}
+            <div
+                className={`video-remote-container ${isLocalLarge ? 'pip' : 'primary'}`}
+                onClick={isLocalLarge ? () => setIsLocalLarge(false) : undefined}
+            >
                 <video
                     ref={remoteVideoRef}
                     autoPlay
@@ -294,25 +300,32 @@ const CallRoom: React.FC = () => {
                 {!remoteStream && (
                     <div className="waiting-message">
                         {otherParticipant ? t('waiting_message_person') : t('waiting_message')}
-                        <div className="qr-code-container" aria-hidden={!shareUrl}>
-                            {shareUrl && <QRCode value={shareUrl} size={184} />}
-                        </div>
-                        <button
-                            className="btn-small"
-                            onClick={copyLink}
-                            onPointerUp={event => {
-                                event.stopPropagation();
-                                handleControlsInteraction();
-                            }}
-                        >
-                            {t('copy_link_share')}
-                        </button>
+                        {!isLocalLarge && (
+                            <>
+                                <div className="qr-code-container" aria-hidden={!shareUrl}>
+                                    {shareUrl && <QRCode value={shareUrl} size={184} />}
+                                </div>
+                                <button
+                                    className="btn-small"
+                                    onClick={copyLink}
+                                    onPointerUp={event => {
+                                        event.stopPropagation();
+                                        handleControlsInteraction();
+                                    }}
+                                >
+                                    {t('copy_link_share')}
+                                </button>
+                            </>
+                        )}
                     </div>
                 )}
             </div>
 
-            {/* Local Video (PIP) */}
-            <div className="video-local-container">
+            {/* PIP Video (Thumbnail) */}
+            <div
+                className={`video-local-container ${isLocalLarge ? 'primary' : 'pip'}`}
+                onClick={!isLocalLarge ? () => setIsLocalLarge(true) : undefined}
+            >
                 <video
                     ref={localVideoRef}
                     autoPlay
@@ -330,6 +343,11 @@ const CallRoom: React.FC = () => {
                     handleControlsInteraction();
                 }}
             >
+                {hasMultipleCameras && (
+                    <button onClick={flipCamera} className="btn-control">
+                        <RotateCcw />
+                    </button>
+                )}
                 <button onClick={toggleMute} className={`btn-control ${isMuted ? 'active' : ''}`}>
                     {isMuted ? <MicOff /> : <Mic />}
                 </button>
