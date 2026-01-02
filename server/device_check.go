@@ -256,7 +256,9 @@ const deviceCheckHTML = `
                 .then(function(data) {
                     var token = data.token;
                     logIce('Token received. Fetching TURN credentials...');
-                    return fetch('/api/turn-credentials?token=' + token);
+                    return fetch('/api/turn-credentials', {
+                        headers: { 'X-Turn-Token': token }
+                    });
                 })
                 .then(function(res) {
                     if (!res.ok) throw new Error('Failed to fetch credentials: ' + res.status);

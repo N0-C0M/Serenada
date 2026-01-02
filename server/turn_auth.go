@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -27,25 +28,36 @@ type turnToken struct {
 }
 
 type TurnTokenStore struct {
-	mu     sync.Mutex
-	tokens map[string]turnToken
-	ttl    time.Duration
+	mu          sync.Mutex
+	tokens      map[string]turnToken
+	ttl         time.Duration
+	lastCleanup time.Time
 }
 
 func NewTurnTokenStore(ttl time.Duration) *TurnTokenStore {
 	return &TurnTokenStore{
-		tokens: make(map[string]turnToken),
-		ttl:    ttl,
+		tokens:      make(map[string]turnToken),
+		ttl:         ttl,
+		lastCleanup: time.Now(),
 	}
 }
 
 func (s *TurnTokenStore) Issue(ip string) (string, time.Time) {
+	now := time.Now()
 	b := make([]byte, 16)
 	rand.Read(b)
 	token := hex.EncodeToString(b)
-	expires := time.Now().Add(s.ttl)
+	expires := now.Add(s.ttl)
 
 	s.mu.Lock()
+	if now.Sub(s.lastCleanup) >= s.ttl {
+		for t, entry := range s.tokens {
+			if now.After(entry.expires) {
+				delete(s.tokens, t)
+			}
+		}
+		s.lastCleanup = now
+	}
 	s.tokens[token] = turnToken{ip: ip, expires: expires}
 	s.mu.Unlock()
 
@@ -75,23 +87,46 @@ func (s *TurnTokenStore) Validate(token, ip string) bool {
 	return true
 }
 
-func handleTurnCredentials(store *TurnTokenStore) http.HandlerFunc {
+func (s *TurnTokenStore) Delete(token string) {
+	if token == "" {
+		return
+	}
+	s.mu.Lock()
+	delete(s.tokens, token)
+	s.mu.Unlock()
+}
+
+func handleTurnCredentials(store *TurnTokenStore, diagnosticStore *TurnTokenStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
-		if store == nil {
+		if store == nil && diagnosticStore == nil {
 			http.Error(w, "TURN token store unavailable", http.StatusServiceUnavailable)
 			return
 		}
 
 		token := r.Header.Get("X-Turn-Token")
 		if token == "" {
-			token = r.URL.Query().Get("token")
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
 		}
-		if !store.Validate(token, getClientIP(r)) {
+
+		clientIP := getClientIP(r)
+		credentialTTL := 15 * 60 // default: 15 minutes
+		isAuthorized := false
+
+		if store != nil && store.Validate(token, clientIP) {
+			isAuthorized = true
+		} else if diagnosticStore != nil && diagnosticStore.Validate(token, clientIP) {
+			isAuthorized = true
+			credentialTTL = 5
+			diagnosticStore.Delete(token)
+		}
+
+		if !isAuthorized {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -107,9 +142,15 @@ func handleTurnCredentials(store *TurnTokenStore) http.HandlerFunc {
 
 		// 2. Generate Credentials (Time-limited)
 		// Standard TURN REST API: username = timestamp:user
-		ttl := 15 * 60 // 15 minutes
+		ttl := credentialTTL
 		timestamp := time.Now().Unix() + int64(ttl)
-		username := fmt.Sprintf("%d:connected-user", timestamp)
+		userPart := clientIP
+		if userPart == "" {
+			userPart = "unknown"
+		}
+		userPart = strings.ReplaceAll(userPart, ":", "-")
+		userPart = strings.ReplaceAll(userPart, "%", "-")
+		username := fmt.Sprintf("%d:%s", timestamp, userPart)
 
 		// Password = HMAC-SHA1(secret, username)
 		mac := hmac.New(sha1.New, []byte(secret))

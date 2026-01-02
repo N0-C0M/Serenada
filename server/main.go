@@ -9,6 +9,7 @@ import (
 
 func main() {
 	turnTokenStore := NewTurnTokenStore(5 * time.Minute)
+	diagnosticTokenStore := NewTurnTokenStore(5 * time.Second)
 
 	// Initialize signaling
 	hub := newHub(turnTokenStore)
@@ -40,15 +41,16 @@ func main() {
 	// WS: 10 connections per minute per IP
 	wsLimiter := NewIPLimiter(10.0/60.0, 5)
 
-	// API: 10 requests per minute per IP
-	apiLimiter := NewIPLimiter(10.0/60.0, 5)
+	// API: 5 requests per minute per IP
+	turnCredsLimiter := NewIPLimiter(5.0/60.0, 5)
+	diagnosticLimiter := NewIPLimiter(5.0/60.0, 5)
 
 	http.HandleFunc("/ws", rateLimitMiddleware(wsLimiter, func(w http.ResponseWriter, r *http.Request) {
 		serveWs(hub, w, r)
 	}))
 
-	http.HandleFunc("/api/turn-credentials", rateLimitMiddleware(apiLimiter, enableCors(handleTurnCredentials(turnTokenStore))))
-	http.HandleFunc("/api/diagnostic-token", rateLimitMiddleware(apiLimiter, enableCors(handleDiagnosticToken(turnTokenStore))))
+	http.HandleFunc("/api/turn-credentials", rateLimitMiddleware(turnCredsLimiter, enableCors(handleTurnCredentials(turnTokenStore, diagnosticTokenStore))))
+	http.HandleFunc("/api/diagnostic-token", rateLimitMiddleware(diagnosticLimiter, enableCors(handleDiagnosticToken(diagnosticTokenStore))))
 
 	http.HandleFunc("/device-check", handleDeviceCheck)
 
