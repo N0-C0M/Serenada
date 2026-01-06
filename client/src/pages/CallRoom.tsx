@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useSignaling } from '../contexts/SignalingContext';
 import { useWebRTC } from '../contexts/WebRTCContext';
 import { useToast } from '../contexts/ToastContext';
-import { Mic, MicOff, Video, VideoOff, PhoneOff, Copy, AlertCircle, RotateCcw } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, PhoneOff, Copy, AlertCircle, RotateCcw, Maximize2, Minimize2 } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import { saveCall } from '../utils/callHistory';
 import { useTranslation } from 'react-i18next';
@@ -38,6 +38,7 @@ const CallRoom: React.FC = () => {
     const [isCameraOff, setIsCameraOff] = useState(false);
     const [areControlsVisible, setAreControlsVisible] = useState(true);
     const [isLocalLarge, setIsLocalLarge] = useState(false);
+    const [remoteVideoFit, setRemoteVideoFit] = useState<'cover' | 'contain'>('cover');
     const lastFacingModeRef = useRef(facingMode);
 
     // Auto-swap videos based on camera facing mode
@@ -250,6 +251,11 @@ const CallRoom: React.FC = () => {
         showToast('success', t('toast_link_copied'));
     };
 
+    const toggleRemoteVideoFit = (e: React.PointerEvent | React.MouseEvent) => {
+        e.stopPropagation();
+        setRemoteVideoFit(prev => prev === 'cover' ? 'contain' : 'cover');
+    };
+
     // Render Pre-Join
     if (!hasJoined) {
         return (
@@ -309,7 +315,18 @@ const CallRoom: React.FC = () => {
                     autoPlay
                     playsInline
                     className="video-remote"
+                    style={{ objectFit: remoteVideoFit }}
                 />
+
+                {remoteStream && (
+                    <button
+                        className="btn-zoom"
+                        onPointerUp={toggleRemoteVideoFit}
+                        title={remoteVideoFit === 'cover' ? t('zoom_fit') : t('zoom_fill')}
+                    >
+                        {remoteVideoFit === 'cover' ? <Minimize2 /> : <Maximize2 />}
+                    </button>
+                )}
                 {!remoteStream && (
                     <div className="waiting-message">
                         {otherParticipant ? t('waiting_message_person') : t('waiting_message')}

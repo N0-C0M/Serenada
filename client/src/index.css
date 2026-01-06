@@ -149,6 +149,7 @@ body {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  transition: object-fit 0.3s ease;
 }
 
 .video-local-container.pip,
@@ -201,6 +202,7 @@ body {
   object-fit: cover;
   transform: scaleX(-1);
   /* Mirror local video */
+  transition: object-fit 0.3s ease;
 }
 
 .controls-bar {
@@ -272,6 +274,40 @@ body {
 
 .btn-end:hover {
   background: var(--danger-hover);
+}
+
+.btn-zoom {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 21;
+  background: rgba(22, 27, 34, 0.6);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: white;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-zoom:hover {
+  background: rgba(47, 129, 247, 0.2);
+  border-color: var(--primary-color);
+  transform: scale(1.05);
+}
+
+.btn-zoom:active {
+  transform: scale(0.95);
+}
+
+.controls-hidden .btn-zoom {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .waiting-message {
