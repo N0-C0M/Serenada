@@ -135,13 +135,30 @@ const CallRoom: React.FC = () => {
         };
     }, [isConnected, signalingError]);
 
-    // Separate effect for cleanup on unmount only - not on state changes
+    // Unified cleanup on unmount - using refs to avoid re-running when context functions change
+    const cleanupRefs = useRef({ leaveRoom, stopLocalMedia, roomId });
+    useEffect(() => {
+        cleanupRefs.current = { leaveRoom, stopLocalMedia, roomId };
+    }, [leaveRoom, stopLocalMedia, roomId]);
+
     useEffect(() => {
         return () => {
-            stopLocalMedia();
+            const { leaveRoom: lr, stopLocalMedia: slm, roomId: rid } = cleanupRefs.current;
+            if (callStartTimeRef.current && rid) {
+                const duration = Math.floor((Date.now() - callStartTimeRef.current) / 1000);
+                saveCall({
+                    roomId: rid,
+                    startTime: callStartTimeRef.current,
+                    duration: duration > 0 ? duration : 0
+                });
+                callStartTimeRef.current = null;
+            }
+            lr();
+            slm();
             mediaStartedRef.current = false;
         };
-    }, [stopLocalMedia]);
+    }, []); // Run only on mount/unmount
+    // eslint-disable-line react-hooks/exhaustive-deps
 
     const callStartTimeRef = useRef<number | null>(null);
 
@@ -199,19 +216,6 @@ const CallRoom: React.FC = () => {
         navigate('/');
     };
 
-    // Also handle cleanup on unmount to save call history if user closes tab/navigates back
-    useEffect(() => {
-        return () => {
-            if (callStartTimeRef.current && roomId) {
-                const duration = Math.floor((Date.now() - callStartTimeRef.current) / 1000);
-                saveCall({
-                    roomId,
-                    startTime: callStartTimeRef.current,
-                    duration: duration > 0 ? duration : 0
-                });
-            }
-        };
-    }, [roomId]);
 
     const scheduleIdleHide = () => {
         if (idleTimeoutRef.current) {
@@ -317,7 +321,7 @@ const CallRoom: React.FC = () => {
                         <button className="btn-secondary" onClick={copyLink}>
                             <Copy size={16} /> {t('copy_link')}
                         </button>
-                        <button className="btn-secondary" onClick={() => navigate('/')}>
+                        <button className="btn-secondary" onClick={handleLeave}>
                             {t('home')}
                         </button>
                     </div>
@@ -381,7 +385,7 @@ const CallRoom: React.FC = () => {
                                 </button>
                                 <button
                                     className="btn-small"
-                                    onClick={() => navigate('/')}
+                                    onClick={handleLeave}
                                     onPointerUp={event => {
                                         event.stopPropagation();
                                         handleControlsInteraction();

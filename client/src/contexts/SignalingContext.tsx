@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
 import { useToast } from './ToastContext';
 
 // Types (Protocol v1)
@@ -59,6 +59,12 @@ export const SignalingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const wsRef = useRef<WebSocket | null>(null);
     const currentRoomIdRef = useRef<string | null>(null);
     const pendingJoinRef = useRef<string | null>(null);
+    const clientIdRef = useRef<string | null>(null);
+
+    // Sync ref
+    useEffect(() => {
+        clientIdRef.current = clientId;
+    }, [clientId]);
 
     useEffect(() => {
         const reconnectAttemptsRef = { current: 0 };
@@ -199,14 +205,13 @@ export const SignalingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         };
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const sendMessage = (type: string, payload?: any, to?: string) => {
+    const sendMessage = useCallback((type: string, payload?: any, to?: string) => {
         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-            // Removed unused 'msg' variable definition
             const realMsg = {
                 v: 1,
                 type,
                 rid: currentRoomIdRef.current || undefined,
-                cid: clientId || undefined,
+                cid: clientIdRef.current || undefined,
                 to,
                 payload
             };
@@ -216,11 +221,11 @@ export const SignalingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         } else {
             console.warn('WS not connected');
         }
-    };
+    }, []);
 
-    const clearError = () => setError(null);
+    const clearError = useCallback(() => setError(null), []);
 
-    const joinRoom = (roomId: string) => {
+    const joinRoom = useCallback((roomId: string) => {
         console.log(`[Signaling] joinRoom call for ${roomId}`);
         setError(null);
         currentRoomIdRef.current = roomId;
@@ -230,22 +235,22 @@ export const SignalingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             console.log('[Signaling] WS not ready, buffering join');
             pendingJoinRef.current = roomId;
         }
-    };
+    }, [sendMessage]);
 
-    const leaveRoom = () => {
+    const leaveRoom = useCallback(() => {
         sendMessage('leave');
         currentRoomIdRef.current = null;
         setRoomState(null);
-    };
+    }, [sendMessage]);
 
-    const endRoom = () => {
+    const endRoom = useCallback(() => {
         sendMessage('end_room');
-    }
+    }, [sendMessage]);
 
-    const watchRooms = (rids: string[]) => {
+    const watchRooms = useCallback((rids: string[]) => {
         if (rids.length === 0) return;
         sendMessage('watch_rooms', { rids });
-    };
+    }, [sendMessage]);
 
     const subscribeToMessages = (cb: (msg: SignalingMessage) => void) => {
         listenersRef.current.push(cb);
