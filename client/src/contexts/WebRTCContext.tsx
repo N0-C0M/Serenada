@@ -92,14 +92,13 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                     const url = new URL(wsUrl);
                     url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
                     url.pathname = '/api/turn-credentials';
+                    url.searchParams.set('token', turnToken);
                     apiUrl = url.toString();
+                } else {
+                    apiUrl = `/api/turn-credentials?token=${encodeURIComponent(turnToken)}`;
                 }
 
-                const res = await fetch(apiUrl, {
-                    headers: {
-                        'X-Turn-Token': turnToken
-                    }
-                });
+                const res = await fetch(apiUrl);
                 if (res.ok) {
                     const data = await res.json();
                     console.log('[WebRTC] Loaded ICE Servers:', data);
