@@ -589,6 +589,7 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             stream.getTracks().forEach(t => t.stop());
             setLocalStream(null);
         }
+        setFacingMode('user');
         requestingMediaRef.current = false;
     }, []);
 
