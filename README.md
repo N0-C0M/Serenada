@@ -57,6 +57,12 @@ Requires Go 1.21+ and a `.env` file in the root directory.
 
 See [DEPLOY.md](DEPLOY.md) for detailed self-hosting instructions.
 
+Quick setup script (downloads, installs dependencies, and provisions the stack):
+```bash
+curl -fsSL https://serenada.app/tools/setup.sh -o setup-serenada.sh
+bash setup-serenada.sh
+```
+
 ## Architecture
 
 ```

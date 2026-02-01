@@ -5,6 +5,7 @@ services:
   coturn:
     user: "root"
     network_mode: "host"
+    ports: []
     volumes:
       - ./coturn/turnserver.prod.conf:/etc/coturn/turnserver.conf
       - /etc/letsencrypt:/etc/letsencrypt
@@ -16,6 +17,7 @@ services:
 
   nginx:
     network_mode: "host"
+    ports: []
     volumes:
       - ./nginx/nginx.prod.conf:/etc/nginx/nginx.conf
       - ./nginx/conf.d:/etc/nginx/conf.d
