@@ -45,7 +45,7 @@ If you prefer to run the components manually:
 ```bash
 cd client
 npm install
-VITE_WS_URL=ws://localhost:8080/ws npm run dev
+npm run dev
 ```
 
 #### 2. Backend (Server)

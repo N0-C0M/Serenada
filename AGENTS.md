@@ -11,6 +11,14 @@ This repository is production-critical.
 - Follow existing style and patterns
 - Prioritize clarity over cleverness
 
+## Documentation
+- Update all relevant documentation when making changes:
+    - README.md - high-level overview for end users, including quick start instructions, description of features, and links to documentation
+    - AGENTS.md - instructions for coding agents
+    - DEPLOY.md - deployment instructions
+    - serenada_protocol_v1.md - protocol specification
+    - push-notifications.md - push notifications documentation
+
 ## Testing
 - If you need to test locally, you can:
 1. Run `npm run build` in the client directory
