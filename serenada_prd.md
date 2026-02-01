@@ -3,7 +3,7 @@
 ## Document info
 - **Product name:** Serenada  
 - **Doc owner:** You  
-- **Version:** v0.2 (MVP-only)  
+- **Version:** v0.2
 - **Date:** 2025-12-26  
 
 ---
@@ -28,7 +28,7 @@ Core interaction:
 ## 2) Goals and non-goals
 
 ### 2.1 Goals
-Serenada MVP must:
+Serenada must:
 1. Allow a user to **start a video call with one tap**
 2. Generate a **unique, shareable URL** for each call
 3. Allow another user to **join the same call from a browser**
@@ -91,7 +91,7 @@ Serenada MVP must:
 - `/call/:roomId`  
   Call page (pre-join → in-call → ended)
 
-### 4.2 Homepage (MVP)
+### 4.2 Homepage
 
 **UI**
 - One large primary button: **Start Call**
@@ -204,7 +204,7 @@ Required due to browser permission and autoplay constraints.
   - Rejoins the room
   - Starts a new session if no one is connected
 
-**Room retention (MVP)**
+**Room retention**
 - Room IDs are stateless HMAC tokens and do not "expire" on the server.
 - The room link remains valid indefinitely for rejoining.
 - Server-side room session state exists only while participants are connected.
@@ -275,7 +275,7 @@ Required due to browser permission and autoplay constraints.
 
 ---
 
-## 8) MVP acceptance checklist
+## 8) Acceptance checklist
 - [ ] SPA loads on mobile and desktop
 - [ ] Start Call generates a unique link
 - [ ] Second user can join via link
@@ -283,5 +283,5 @@ Required due to browser permission and autoplay constraints.
 - [ ] Mute and camera toggle work
 - [ ] End Call disconnects the local user only
 - [ ] Reopening link rejoins the room
-- [ ] No non-MVP features present
+- [ ] No out-of-scope features present
 - [ ] Optional encrypted push notifications work when enabled

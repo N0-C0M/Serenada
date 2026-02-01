@@ -85,6 +85,7 @@ func main() {
 	}))
 	http.HandleFunc("/sse", rateLimitMiddleware(sseLimiter, enableCors(handleSSE(hub))))
 
+	// ID & Credentials Routes
 	http.HandleFunc("/api/turn-credentials", withTimeout(rateLimitMiddleware(turnCredsLimiter, enableCors(handleTurnCredentials())), 15*time.Second))
 	http.HandleFunc("/api/diagnostic-token", withTimeout(rateLimitMiddleware(diagnosticLimiter, enableCors(handleDiagnosticToken())), 15*time.Second))
 	http.HandleFunc("/api/room-id", withTimeout(rateLimitMiddleware(roomIDLimiter, enableCors(handleRoomID())), 15*time.Second))

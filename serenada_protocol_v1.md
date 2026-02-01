@@ -2,7 +2,7 @@
 
 **Purpose:** Define the signaling protocol used by the Serenada SPA and backend signaling service to establish and manage **1:1 WebRTC calls** (rooms) via **WebSocket or SSE**.
 
-**Scope (MVP-only):**
+**Scope:**
 - Room join/leave
 - Host-designation and host “end call” for all participants
 - SDP offer/answer exchange
@@ -72,7 +72,7 @@ All messages are JSON objects with a consistent envelope.
 ## 2. Identity and roles
 
 ### 2.1 Client ID (`cid`)
-**MVP recommendation:** server assigns the `cid` on join and returns it in `joined`.
+**Recommendation:** server assigns the `cid` on join and returns it in `joined`.
 
 ### 2.2 Session ID (`sid`)
 Server assigns `sid` per WebSocket connection and returns it in `joined`. For SSE, the client may pass a `sid` in the URL and the server will reuse it. Clients include it in subsequent messages.
@@ -86,7 +86,7 @@ Host privileges:
 
 ---
 
-## 3. Room model (MVP semantics)
+## 3. Room model
 
 - A **room** is identified by `rid` and exists only while participants are connected (deleted when empty or when host ends the room).
 - A **call session** is the live WebRTC connection between up to two participants in that room.
@@ -164,7 +164,7 @@ Acknowledges join success and provides room state.
 ---
 
 ### 4.3 `room_state` (server → client)
-Sent when participants join/leave or host changes (rare in MVP).
+Sent when participants join/leave or host changes.
 
 ```json
 {
@@ -381,7 +381,7 @@ Standard error message.
 }
 ```
 
-**Error codes (MVP)**
+**Error codes**
 - `BAD_REQUEST` — invalid JSON, missing required fields, invalid types
 - `UNSUPPORTED_VERSION` — `v` not supported
 - `ROOM_FULL` — capacity exceeded (2 participants)
@@ -496,7 +496,7 @@ WebSocket/SSE preserve ordering per connection, but relay messages across client
 
 ---
 
-## 7. Backend responsibilities (MVP)
+## 7. Backend responsibilities
 
 ### 7.1 Room state management
 Backend maintains:
@@ -520,7 +520,47 @@ For `offer`, `answer`, `ice`:
 
 ---
 
-## 8. Security requirements (MVP)
+## 8. HTTP API
+
+### 8.1 `GET /api/room-id`
+Generates a new room ID.
+
+**Response**
+```json
+{ "roomId": "AbC123..." }
+```
+
+**Errors**
+- `503 Service Unavailable` if `ROOM_ID_SECRET` is not configured.
+
+### 8.2 `GET /api/turn-credentials?token=...`
+Returns TURN credentials for a valid TURN token. The token is issued by the backend after a participant joins a room and returned in the `joined` message. Alternatively, the token could be returned by /api/diagnostic-token.
+
+**Response**
+```json
+{
+  "username": "1700000000:client-ip",
+  "password": "base64-hmac",
+  "uris": ["stun:host", "turn:host", "turns:host:5349?transport=tcp"],
+  "ttl": 900
+}
+```
+
+**Errors**
+- `401 Unauthorized` if token is missing or invalid.
+- `503 Service Unavailable` if STUN/TURN is not configured.
+
+### 8.3 `GET|POST /api/diagnostic-token`
+Issues a short-lived diagnostic TURN token (5 seconds).
+
+**Response**
+```json
+{ "token": "payload.signature", "expires": 1735174800 }
+```
+
+---
+
+## 9. Security requirements
 
 - **HTTPS for APIs, WebSocket/SSE for signaling**.
 - **TURN Gating**: TURN tokens are only issued in the `joined` message after successful `rid` validation, preventing unauthorized use of the TURN relay by unauthenticated clients.
@@ -534,7 +574,7 @@ For `offer`, `answer`, `ice`:
 
 ---
 
-## 9. Client state machine (recommended)
+## 10. Client state machine (recommended)
 
 **Disconnected**
 → connect WS/SSE
@@ -550,7 +590,7 @@ For `offer`, `answer`, `ice`:
 
 ---
 
-## 10. Minimal conformance checklist
+## 11. Minimal conformance checklist
 
 ### Client
 - [ ] Connect WS/SSE, send `join` on call page
