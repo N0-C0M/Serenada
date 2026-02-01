@@ -9,11 +9,11 @@
 ## Architecture (Server-blind)
 ### Key material (per subscriber)
 - Each device that subscribes to notifications generates an ECDH key pair (P-256) in the browser.
-- The private key is stored in IndexedDB (non-exported). The public key is sent to the server with the subscription.
+- The private key is stored in IndexedDB as a CryptoKey. The public key is sent to the server with the subscription.
 - The server stores the public key alongside the subscription record (`enc_pubkey`).
 
 ### Snapshot encryption (per join)
-1. Joiner captures a camera frame at Join time and compresses it (JPEG, ~320px width).
+1. Joiner captures a camera frame at Join time and compresses it (JPEG, ~320px width, ~200KB target).
 2. Joiner generates a random AES-256-GCM content key and encrypts the snapshot with a random IV.
 3. Joiner generates an ephemeral ECDH key pair for this snapshot.
 4. For each recipient public key:
@@ -28,7 +28,8 @@
 ### Server behavior
 - Stores only encrypted snapshot bytes plus metadata (key wrapping data, IVs, mime).
 - Never sees plaintext.
-- TTL cleanup removes snapshot data after 10 minutes.
+- Cleanup runs on snapshot upload and removes files older than 10 minutes.
+- Enforces a max ciphertext size of 300KB per snapshot.
 - On join, server sends push notifications that include:
   - `snapshotId`
   - `snapshotIv`
@@ -48,6 +49,13 @@
   - `icon` fallback for macOS (Notification Center ignores `image`).
 
 ## Protocol details
+### VAPID key
+`GET /api/push/vapid-public-key`
+
+```json
+{ "publicKey": "..." }
+```
+
 ### Subscription request
 `POST /api/push/subscribe?roomId=...`
 
@@ -58,6 +66,13 @@
   "locale": "en-US",
   "encPublicKey": { "kty": "EC", "crv": "P-256", "x": "...", "y": "..." }
 }
+```
+
+### Unsubscribe
+`DELETE /api/push/subscribe?roomId=...`
+
+```json
+{ "endpoint": "..." }
 ```
 
 ### Recipient list
@@ -89,6 +104,11 @@
 }
 ```
 
+**Response**
+```json
+{ "id": "SNAP-...", "url": "/api/push/snapshot/SNAP-..." }
+```
+
 ### Push payload fields
 ```json
 {
@@ -107,7 +127,7 @@
 
 ## Data retention
 - Snapshots are encrypted and stored under `DATA_DIR/snapshots`.
-- TTL cleanup removes files older than 10 minutes.
+- Cleanup runs on snapshot upload and removes files older than 10 minutes.
 - No deletion-on-first-fetch to allow multiple subscribers.
 
 ## Limitations

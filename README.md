@@ -9,8 +9,10 @@ A simple, privacy-focused 1:1 video calling application built with WebRTC. No ac
 - **Instant calls** – One tap to start, share a link to connect
 - **No accounts required** – Just open and call
 - **Privacy-first** – No tracking, no analytics, end-to-end encrypted peer-to-peer video
+- **Resilient signaling** – WebSocket with SSE fallback when WS is blocked
 - **Mobile-friendly** – Works on Android Chrome, iOS Safari, and desktop browsers
 - **Self-hostable** – Run your own instance with full control
+  - **Optional join alerts** – Encrypted push notifications with snapshot previews (opt-in)
 
 ## Quick Start
 
@@ -43,7 +45,7 @@ If you prefer to run the components manually:
 ```bash
 cd client
 npm install
-npm run dev
+VITE_WS_URL=ws://localhost:8080/ws npm run dev
 ```
 
 #### 2. Backend (Server)
@@ -51,7 +53,7 @@ npm run dev
 cd server
 go run .
 ```
-Requires Go 1.21+ and a `.env` file in the root directory.
+Requires Go 1.24+ and a `.env` file in the root directory.
 
 ### Production Deployment
 
@@ -71,7 +73,7 @@ bash setup-serenada.sh
 │  (React SPA)    │  WebRTC │  (React SPA)    │
 └────────┬────────┘         └────────┬────────┘
          │                           │
-         │ WSS (signaling)           │
+         │ WS/SSE (signaling)        │
          ▼                           ▼
 ┌─────────────────────────────────────────────┐
 │              Go Signaling Server            │
@@ -91,14 +93,15 @@ bash setup-serenada.sh
 ## Documentation
 
 - [Deployment Guide](DEPLOY.md) – Self-hosting instructions
-- [Protocol Specification](serenada_protocol_v1.md) – WebSocket signaling protocol
+- [Protocol Specification](serenada_protocol_v1.md) – Signaling protocol (WebSocket + SSE)
+- [Push Notifications](push-notifications.md) – Encrypted snapshot notifications
 
 ## Technology
 
 | Component | Technology |
 |-----------|------------|
-| Frontend | React 18, TypeScript, Vite |
-| Backend | Go 1.21+ |
+| Frontend | React 19, TypeScript, Vite |
+| Backend | Go 1.24+ |
 | Media | WebRTC, Coturn |
 | Proxy | Nginx |
 | Containers | Docker, Docker Compose |

@@ -1,6 +1,6 @@
-# Serenada Signaling Protocol (WebSocket) — v1
+# Serenada Signaling Protocol (WebSocket + SSE) — v1
 
-**Purpose:** Define the signaling protocol used by the Serenada SPA and backend signaling service to establish and manage **1:1 WebRTC calls** (rooms) via **WSS**.
+**Purpose:** Define the signaling protocol used by the Serenada SPA and backend signaling service to establish and manage **1:1 WebRTC calls** (rooms) via **WebSocket or SSE**.
 
 **Scope (MVP-only):**
 - Room join/leave
@@ -19,17 +19,24 @@
 ### 1.1 WebSocket endpoint
 - **URL:** `wss://{host}/ws`
 - **Protocol:** WebSocket over TLS (WSS)
-- **Subprotocol:** *(optional but recommended)* `serenada.signaling.v1`
+- **Subprotocol:** *(optional)* `serenada.signaling.v1`
 
-### 1.2 Connection lifecycle
-- Client opens WSS connection.
+### 1.2 SSE endpoint
+SSE is used as a fallback when WebSockets are unavailable.
+
+- **Stream (receive):** `GET https://{host}/sse?sid={sessionId}`
+- **Send (client → server):** `POST https://{host}/sse?sid={sessionId}`
+- **Session ID:** clients may generate `sid` and reuse it across reconnects; if omitted, server generates one.
+
+### 1.3 Connection lifecycle
+- Client opens WS or SSE connection.
 - Client sends `join` for a specific `roomId`.
 - Server responds with `joined` plus room state (host/peers).
 - Clients exchange SDP/ICE via server relay messages.
 - Client sends `leave` when leaving a room.
 - Host can send `end_room` to terminate the current call session for all.
 
-### 1.3 Message envelope (common)
+### 1.4 Message envelope (common)
 All messages are JSON objects with a consistent envelope.
 
 ```json
@@ -49,7 +56,7 @@ All messages are JSON objects with a consistent envelope.
 - `v` *(number, required)*: protocol version. Always `1` for this spec.
 - `type` *(string, required)*: message type (see below).
 - `rid` *(string, required for room-scoped messages)*: room ID.
-- `sid` *(string, required after join)*: server-issued session ID for this connection.
+- `sid` *(string, required after join)*: session ID for this connection (server-issued for WebSocket; client-provided or server-issued for SSE).
 - `cid` *(string, required after join)*: client ID for this participant (server-issued or client-provided; see 2.2).
 - `to` *(string, optional)*: destination client ID for directed relay messages (offer/answer/ice). If omitted, server may infer.
 - `ts` *(number, optional)*: client timestamp (ms since epoch). Server may ignore.
@@ -68,7 +75,7 @@ All messages are JSON objects with a consistent envelope.
 **MVP recommendation:** server assigns the `cid` on join and returns it in `joined`.
 
 ### 2.2 Session ID (`sid`)
-Server assigns `sid` per WebSocket connection and returns it in `joined`. Clients include it in subsequent messages. Server may also map it implicitly to the socket.
+Server assigns `sid` per WebSocket connection and returns it in `joined`. For SSE, the client may pass a `sid` in the URL and the server will reuse it. Clients include it in subsequent messages.
 
 ### 2.3 Host
 - The **host** is the **first successful joiner** of a room (when room has no participants).
@@ -81,7 +88,7 @@ Host privileges:
 
 ## 3. Room model (MVP semantics)
 
-- A **room** is identified by `rid` and can exist even when empty (until retention expiry).
+- A **room** is identified by `rid` and exists only while participants are connected (deleted when empty or when host ends the room).
 - A **call session** is the live WebRTC connection between up to two participants in that room.
 - **Capacity:** max **2** participants connected at once.
 
@@ -105,14 +112,18 @@ Join a room.
     "ua": "optional user agent string",
     "capabilities": {
       "trickleIce": true
-    }
+    },
+    "reconnectCid": "optionalPreviousClientId",
+    "pushEndpoint": "optionalPushEndpoint",
+    "snapshotId": "optionalSnapshotId"
   }
 }
 ```
 
 **Server behavior**
+- Validate `rid` as a signed 27-character room token (generated via `/api/room-id`).
 - If room is empty, make this participant host.
-- If room already has 2 participants, reject with `ROOM_FULL`.
+- If room already has 2 participants, reject with `ROOM_FULL` (unless `reconnectCid` matches a ghost session, in which case the server evicts the ghost and reuses the CID).
 - On success, respond with `joined`.
 
 ---
@@ -147,7 +158,7 @@ Acknowledges join success and provides room state.
 
 **Client behavior**
 - Store `sid`, `cid`, and `turnToken`.
-- Immediately fetch ICE servers using the `turnToken` via `X-Turn-Token` header.
+- Immediately fetch ICE servers using the `turnToken` via the `token` query param on `/api/turn-credentials`.
 - If another participant is already present, proceed to WebRTC negotiation using the rules in section 5.
 
 ---
@@ -192,10 +203,7 @@ Leave the room.
 **Server behavior**
 - Remove participant from room.
 - Broadcast `room_state` to remaining participant (if any).
-- If host leaves and another participant remains, server may either:
-  - Transfer host to remaining participant (recommended), or
-  - Keep hostCid null until next join.
-  *(MVP recommendation: transfer host.)*
+- If host leaves and another participant remains, server transfers host to the remaining participant.
 
 ---
 
@@ -218,8 +226,7 @@ Host ends the call session for everyone in the room.
 **Server behavior**
 - Validate sender is current host.
 - Broadcast `room_ended` to all participants.
-- Optionally clear ephemeral call session state.
-- Participants may remain “in room” or be forcibly removed. **MVP requirement:** remove all participants from the room and require re-join to start again.
+- Delete the room; clients must re-join to start a new session.
 
 ---
 
@@ -240,8 +247,7 @@ Notifies participants the host ended the call.
 
 **Client behavior**
 - Immediately close RTCPeerConnection.
-- Stop local media tracks.
-- Navigate to “Call ended” UI and allow returning home.
+- Reset room UI state; local media may remain active until the user leaves.
 - If user reloads the link, they may `join` again.
 
 ---
@@ -378,15 +384,28 @@ Standard error message.
 **Error codes (MVP)**
 - `BAD_REQUEST` — invalid JSON, missing required fields, invalid types
 - `UNSUPPORTED_VERSION` — `v` not supported
-- `ROOM_NOT_FOUND` — if backend chooses not to auto-create rooms on join
 - `ROOM_FULL` — capacity exceeded (2 participants)
 - `NOT_HOST` — non-host attempted `end_room`
+- `SERVER_NOT_CONFIGURED` — room ID secret missing on server
+- `INVALID_ROOM_ID` — room ID failed validation
 - `INTERNAL` — unexpected server error
-- `BAD_REQUEST` — invalid JSON or payload
 
 ---
 
-### 4.11 Room Status Monitoring (WebSocket)
+### 4.11 `ping` (client → server)
+Client keepalive. Server ignores.
+
+```json
+{
+  "v": 1,
+  "type": "ping",
+  "payload": { "ts": 1735171200000 }
+}
+```
+
+---
+
+### 4.12 Room Status Monitoring (WebSocket/SSE)
 
 Used to aggregate real-time occupancy for a list of rooms (e.g., recent calls list).
 
@@ -447,7 +466,7 @@ To avoid “glare” (both sides sending offers), assign roles deterministically
   - If you are not host: wait for `offer` and respond with `answer`.
 
 ### 5.2 Local media
-- Client obtains local media (camera+mic) only after user gesture (“Join Call”).
+- Client may attempt to start local media before join for preview; browsers may require user gesture.
 - Add tracks to `RTCPeerConnection` before creating offer/answer.
 
 ### 5.3 Trickle ICE
@@ -456,16 +475,15 @@ To avoid “glare” (both sides sending offers), assign roles deterministically
 
 ### 5.4 Disconnect / remote leave
 - If remote leaves (room_state goes to 1 participant) or a `room_ended` is received:
-  - Close RTCPeerConnection
-  - Stop local tracks
-  - Reset UI state
+  - Close RTCPeerConnection and clear remote media
+  - Keep local media running while waiting (stop when user leaves)
 
 ---
 
 ## 6. Ordering and reliability
 
 ### 6.1 Message ordering
-WebSocket preserves ordering per connection, but relay messages across clients can interleave. Clients must tolerate:
+WebSocket/SSE preserve ordering per connection, but relay messages across clients can interleave. Clients must tolerate:
 - ICE arriving before SDP is set
 - Answer arriving quickly after offer
 
@@ -489,8 +507,7 @@ Backend maintains:
 ### 7.2 Relay policy
 For `offer`, `answer`, `ice`:
 - Validate sender is in room.
-- Validate `to` is present and is in room (recommended).
-- Relay to the target only.
+- If `to` is present and matches a participant, relay only to that participant; otherwise relay to all other participants.
 - Do not persist SDP/ICE long-term; keep in-memory only.
 
 ### 7.3 Capacity enforcement
@@ -499,17 +516,18 @@ For `offer`, `answer`, `ice`:
 
 ### 7.4 Cleanup
 - On socket disconnect: treat as `leave`.
-- If room becomes empty: keep room metadata until retention expiry (implementation detail).
+- If room becomes empty: delete room.
 
 ---
 
 ## 8. Security requirements (MVP)
 
-- **HTTPS/WSS only**.
+- **HTTPS for APIs, WebSocket/SSE for signaling**.
 - **TURN Gating**: TURN tokens are only issued in the `joined` message after successful `rid` validation, preventing unauthorized use of the TURN relay by unauthenticated clients.
 - Rate limit:
-  - new WebSocket connections per IP
-  - `join` attempts per IP/room
+  - new WS connections per IP
+  - SSE requests per IP
+  - TURN credentials, room-id, and push API endpoints
 - Validate message sizes and required fields.
 - Room IDs are unguessable; do not expose sequential identifiers.
 - Do not log SDP bodies in plaintext at info level (they can include network details). If needed, log only lengths or hashed summaries.
@@ -519,7 +537,7 @@ For `offer`, `answer`, `ice`:
 ## 9. Client state machine (recommended)
 
 **Disconnected**
-→ connect WSS
+→ connect WS/SSE
 → **SocketConnected**
 → send `join`
 → **Joined (Waiting)** (1 participant)
@@ -535,19 +553,18 @@ For `offer`, `answer`, `ice`:
 ## 10. Minimal conformance checklist
 
 ### Client
-- [ ] Connect WSS, send `join` on call page
+- [ ] Connect WS/SSE, send `join` on call page
 - [ ] Show “Join Call” and only call `getUserMedia` after user gesture
 - [ ] Implement host-as-offerer rule to avoid glare
 - [ ] Trickle ICE send/receive with queueing before remote SDP is set
 - [ ] Handle `room_state`, `room_ended`, and `error`
-- [ ] Stop media tracks on leave/end
+- [ ] Stop local tracks on explicit leave
 
 ### Backend
-- [ ] Accept WSS, parse JSON, validate schema
-- [ ] Create room on first join (or return ROOM_NOT_FOUND; pick one and document)
+- [ ] Accept WS/SSE, parse JSON, validate schema
+- [ ] Create room on first join
 - [ ] Enforce max 2 participants
 - [ ] Assign hostCid and transfer host if host leaves
 - [ ] Relay offer/answer/ice to correct peer
 - [ ] Broadcast `room_state` updates
 - [ ] Implement `end_room` and broadcast `room_ended`
-

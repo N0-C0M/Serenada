@@ -13,7 +13,7 @@ This guide covers deploying the Serenada app on a single linux VPS using Docker 
 To run the application locally for development:
 
 ```bash
-docker-compose up -d --build
+docker compose up -d --build
 ```
 
 The app will be accessible at `http://localhost`. It uses `nginx/nginx.dev.conf` and `coturn/turnserver.dev.conf`.
@@ -36,6 +36,7 @@ Edit `.env.production` and set the following required variables:
 - `IPV4`: VPS Public IPv4 address
 - `IPV6`: VPS Public IPv6 address
 - `TURN_SECRET`: Secure secret for TURN (generate with `openssl rand -hex 32`)
+- `TURN_TOKEN_SECRET` *(optional, recommended)*: Separate secret for TURN tokens (falls back to `TURN_SECRET` if unset)
 - `ROOM_ID_SECRET`: Secure secret for Room IDs (generate with `openssl rand -hex 32`)
 
 #### Configuration Templates

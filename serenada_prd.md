@@ -21,7 +21,7 @@ Core interaction:
 - Tap **Start Call**
 - Share the generated link
 - Another person opens the link and joins the call
-- Either party can leave; the creator can end the call for both
+- Either party can leave; the remaining participant stays in the room (waiting)
 
 ---
 
@@ -37,6 +37,7 @@ Serenada MVP must:
    - Android Chrome (primary)
    - Desktop Chrome / Edge
    - iOS Safari (best effort)
+6. Provide **optional, encrypted push notifications** for join events (opt-in)
 
 ### 2.2 Non-goals (explicitly out of scope)
 - User accounts or authentication
@@ -46,7 +47,7 @@ Serenada MVP must:
 - Call recording
 - Screen sharing
 - Call scheduling
-- Notifications
+- Non-push notifications (e.g., SMS/email)
 - Analytics or usage tracking
 
 ---
@@ -72,9 +73,9 @@ Serenada MVP must:
 - Joins the existing call
 
 #### Use case 3: End a call
-- Call creator taps **End Call**
-- Both participants are disconnected
-- Both are returned to the homepage
+- User taps **End Call**
+- Only that participant is disconnected
+- The remaining participant stays in the room (waiting)
 
 #### Use case 4: Rejoin a call
 - Opening the same link again rejoins the same call room
@@ -118,9 +119,10 @@ Required due to browser permission and autoplay constraints.
 - Optional local camera preview
 
 **Behavior**
+- On load, the app attempts to start local media for a preview (browser may prompt or block).
 - Clicking Join:
-  - Requests camera and microphone permissions
-  - Initializes WebRTC connection
+  - Sends the signaling `join`
+  - Initializes WebRTC negotiation
 
 #### State B: In-call
 
@@ -185,15 +187,11 @@ Required due to browser permission and autoplay constraints.
   - Do not join the call
 
 ### 5.5 End call behavior
-- The **call creator is the host**
-- Host has an **End Call** button
-- Ending the call:
-  - Disconnects both participants
-  - Returns both to the homepage or ended screen
+- The in-call **End Call** button disconnects the local participant only.
+- The remaining participant stays in the room (waiting).
 
 **Acceptance criteria**
-- Remote participant is disconnected immediately
-- No lingering media capture
+- Local participant disconnects immediately
 
 ### 5.6 Leaving a call
 - Non-host participant may leave the call
@@ -201,7 +199,7 @@ Required due to browser permission and autoplay constraints.
 - Host remains in the call
 
 ### 5.7 Rejoining behavior
-- Rooms are persistent for a limited time
+- Room sessions are ephemeral; room IDs remain valid for rejoin
 - Reopening the same link:
   - Rejoins the room
   - Starts a new session if no one is connected
@@ -210,6 +208,11 @@ Required due to browser permission and autoplay constraints.
 - Room IDs are stateless HMAC tokens and do not "expire" on the server.
 - The room link remains valid indefinitely for rejoining.
 - Server-side room session state exists only while participants are connected.
+
+### 5.8 Push notifications (optional)
+- Users can opt in per room to receive join notifications.
+- Notifications may include an encrypted snapshot preview.
+- The server stores only encrypted snapshot payloads and delivery metadata.
 
 ---
 
@@ -223,7 +226,7 @@ Required due to browser permission and autoplay constraints.
     - `RTCPeerConnection`
 - **Backend**
   - Lightweight signaling service
-  - WebSocket-based signaling
+  - WebSocket signaling with SSE fallback
 - **Networking**
   - STUN for NAT discovery
   - TURN for fallback relay
@@ -233,11 +236,12 @@ Required due to browser permission and autoplay constraints.
 - Exchange SDP offer/answer
 - Exchange ICE candidates
 - Leave room
-- End room (host only)
+- End room (host only, server-supported; not exposed in UI)
+- WebSocket transport with SSE fallback when WS is unavailable
 
 ### 6.3 Security and transport
 - Application served over HTTPS
-- Signaling over WSS
+- Signaling over WSS or SSE (HTTPS)
 - WebRTC encryption (DTLS-SRTP)
 
 ### 6.4 Browser and device support
@@ -250,7 +254,7 @@ Required due to browser permission and autoplay constraints.
 - iOS Safari (best effort)
 
 **Constraints**
-- Explicit user gesture required to start media
+- Browsers may require a user gesture to start media; pre-join preview may be blocked until interaction
 - Backgrounding the tab may interrupt media
 
 ---
@@ -262,11 +266,12 @@ Required due to browser permission and autoplay constraints.
 - No tracking or analytics
 - No media recording or storage
 - Media flows peer-to-peer (or via TURN relay)
+- Push notification snapshots are encrypted client-side; server stores only ciphertext
 
 ### 7.2 Security considerations
 - Unpredictable room IDs
-- Rate limiting on room creation and joins
-- Immediate stop of camera/microphone on leave or end
+- Rate limiting on room ID creation and signaling connections
+- Stop camera/microphone on explicit leave; local media may remain active while waiting after remote leave/end
 
 ---
 
@@ -276,6 +281,7 @@ Required due to browser permission and autoplay constraints.
 - [ ] Second user can join via link
 - [ ] Audio and video work reliably
 - [ ] Mute and camera toggle work
-- [ ] Host can end call for both users
+- [ ] End Call disconnects the local user only
 - [ ] Reopening link rejoins the room
 - [ ] No non-MVP features present
+- [ ] Optional encrypted push notifications work when enabled
