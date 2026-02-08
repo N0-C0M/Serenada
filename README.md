@@ -11,6 +11,7 @@ A simple, privacy-focused 1:1 video calling application built with WebRTC. No ac
 - **Privacy-first** – No tracking, no analytics, end-to-end encrypted peer-to-peer video
 - **Resilient signaling** – WebSocket with SSE fallback when WS is blocked
 - **Mobile-friendly** – Works on Android Chrome, iOS Safari, and desktop browsers
+- **Recent calls on home** – Web and Android home screens show your latest calls with live room occupancy (Android supports long-press remove)
 - **Self-hostable** – Run your own instance with full control
 - **Optional join alerts** – Encrypted push notifications with snapshot previews (opt-in)
 
@@ -55,6 +56,16 @@ go run .
 ```
 Requires Go 1.24+ and a `.env` file in the root directory.
 
+### Android Client (Kotlin)
+The native Android app lives in `client-android/`.
+
+1. Open `client-android/` in Android Studio.
+2. Sync Gradle.
+3. Run on a device or emulator (minSdk 26).
+
+By default the app targets `https://serenada.app`, and the server host can be changed in Settings.
+The Android app language can also be set in Settings: `Auto (default)`, `English`, `Русский`, `Español`, `Français`. `Auto` follows the device language and falls back to English.
+
 ### Production Deployment
 
 See [DEPLOY.md](DEPLOY.md) for detailed self-hosting instructions.
@@ -95,6 +106,7 @@ bash setup-serenada.sh
 - [Deployment Guide](DEPLOY.md) – Self-hosting instructions
 - [Protocol Specification](serenada_protocol_v1.md) – Signaling protocol (WebSocket + SSE)
 - [Push Notifications](push-notifications.md) – Encrypted snapshot notifications
+- [Android Client README](client-android/README.md) – Kotlin native app setup and build notes
 
 ## Technology
 
