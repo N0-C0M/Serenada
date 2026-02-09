@@ -80,6 +80,8 @@ From the project root on your local machine:
 ./deploy.sh
 ```
 
+`deploy.sh` also publishes the Android APK to `https://<your-domain>/tools/serenada.apk` by copying `client-android/app/build/outputs/apk/release/serenada.apk` into the built web assets (`client/dist/tools/serenada.apk`) before sync. If the release APK is missing, the script will attempt `./gradlew :app:assembleRelease` in `client-android/`. If that build fails, deployment continues and prints a warning instead of failing.
+
 ### 5. Android App Links (assetlinks.json)
 
 Android deep links require `/.well-known/assetlinks.json` to be served from your domain. The file lives at:
@@ -92,6 +94,9 @@ Update it with your **release** signing certificate SHA-256 fingerprint before d
 
 ### 6. Advanced: Legacy Redirects
 If you need to support redirects from old domains (e.g. `connected.dowhile.fun`), you can create a template at `nginx/nginx.legacy.conf.template`. The deployment script will automatically generate an `extra` configuration for Nginx if this file exists.
+
+### 7. Android camera source modes
+The Android in-call camera source cycle (`selfie -> world -> composite`) is fully client-side and does not require server, TURN, or deployment configuration changes.
 
 ## Verification
 
