@@ -126,7 +126,7 @@ fun SettingsScreen(
                 HostOptionRow(
                     selected = isCustomHost,
                     label = "Custom",
-                    onClick = { /* Фокус на поле ввода, логика в TextField */ }
+                    onClick = {  }
                 )
 
                 OutlinedTextField(
