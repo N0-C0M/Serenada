@@ -1,12 +1,19 @@
 package app.serenada.android.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -16,6 +23,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -25,6 +33,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -50,9 +59,15 @@ fun SettingsScreen(
         SettingsStore.LANGUAGE_ES to stringResource(R.string.settings_language_spanish),
         SettingsStore.LANGUAGE_FR to stringResource(R.string.settings_language_french)
     )
+
     val selectedLanguageLabel = languageOptions.firstOrNull { it.first == selectedLanguage }?.second
         ?: languageOptions.first().second
     var languageMenuExpanded by remember { mutableStateOf(false) }
+
+
+    val isDefaultHost = host == SettingsStore.DEFAULT_HOST
+    val isRuHost = host == SettingsStore.HOST_RU
+    val isCustomHost = !isDefaultHost && !isRuHost
 
     Scaffold(
         topBar = {
@@ -78,36 +93,81 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(24.dp)
         ) {
-            Column {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+
+                Text(
+                    text = stringResource(R.string.settings_server_host),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+
+
+                HostOptionRow(
+                    selected = isDefaultHost,
+                    label = "Global (${SettingsStore.DEFAULT_HOST})",
+                    onClick = { onHostChange(SettingsStore.DEFAULT_HOST) }
+                )
+
+
+                HostOptionRow(
+                    selected = isRuHost,
+                    label = "Russia (${SettingsStore.HOST_RU})",
+                    onClick = { onHostChange(SettingsStore.HOST_RU) }
+                )
+
+
+                HostOptionRow(
+                    selected = isCustomHost,
+                    label = "Custom",
+                    onClick = { /* Фокус на поле ввода, логика в TextField */ }
+                )
+
                 OutlinedTextField(
                     value = host,
                     onValueChange = onHostChange,
                     label = { Text(stringResource(R.string.settings_server_host)) },
                     isError = hostError != null,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    singleLine = true
                 )
+
                 if (!hostError.isNullOrBlank()) {
                     Text(
                         text = hostError,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(top = 8.dp)
+                        modifier = Modifier.padding(top = 4.dp, start = 16.dp)
                     )
                 }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+
+                Text(
+                    text = stringResource(R.string.settings_language),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+
                 ExposedDropdownMenuBox(
                     expanded = languageMenuExpanded,
                     onExpandedChange = { languageMenuExpanded = !languageMenuExpanded },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 16.dp)
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     OutlinedTextField(
                         value = selectedLanguageLabel,
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text(stringResource(R.string.settings_language)) },
                         trailingIcon = {
                             ExposedDropdownMenuDefaults.TrailingIcon(expanded = languageMenuExpanded)
                         },
@@ -132,5 +192,30 @@ fun SettingsScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun HostOptionRow(
+    selected: Boolean,
+    label: String,
+    onClick: () -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 4.dp)
+    ) {
+        RadioButton(
+            selected = selected,
+            onClick = onClick
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.padding(start = 8.dp)
+        )
     }
 }
