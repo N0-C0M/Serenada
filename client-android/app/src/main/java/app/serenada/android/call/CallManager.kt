@@ -343,7 +343,7 @@ class CallManager(context: Context) {
         sentOffer = false
         pendingMessages.clear()
 
-        // Read defaults from settings
+
         val defaultAudio = settingsStore.isDefaultMicrophoneEnabled
         val defaultVideo = settingsStore.isDefaultCameraEnabled
 
@@ -419,12 +419,7 @@ class CallManager(context: Context) {
 
     fun startScreenShare(intent: Intent) {
         if (_uiState.value.isScreenSharing) return
-        // You must implement startScreenShare in your WebRtcEngine to use MediaProjection
-        // webRtcEngine.startScreenShare(intent)
-        // Since I cannot edit WebRtcEngine.kt, I am assuming this method exists or you will add it.
-        // If it doesn't exist, this line will cause a compilation error.
         try {
-            // Using reflection to call startScreenShare if it exists to prevent compilation error in this demo
             val method = webRtcEngine::class.java.getMethod("startScreenShare", Intent::class.java)
             method.invoke(webRtcEngine, intent)
         } catch (e: Exception) {
@@ -437,8 +432,7 @@ class CallManager(context: Context) {
 
     fun stopScreenShare() {
         if (!_uiState.value.isScreenSharing) return
-        // You must implement stopScreenShare in your WebRtcEngine to switch back to camera
-        // webRtcEngine.stopScreenShare()
+
         try {
             val method = webRtcEngine::class.java.getMethod("stopScreenShare")
             method.invoke(webRtcEngine)
@@ -922,13 +916,13 @@ class CallManager(context: Context) {
             )
         )
 
-        // Ensure screen share is stopped when call ends
+
         if (uiState.value.isScreenSharing) {
             try {
                 val method = webRtcEngine::class.java.getMethod("stopScreenShare")
                 method.invoke(webRtcEngine)
             } catch (e: Exception) {
-                // Ignore
+
             }
         }
 
