@@ -33,6 +33,13 @@ class SettingsStore(context: Context) {
             prefs.edit().putString(KEY_LANGUAGE, normalizeLanguage(value)).apply()
         }
 
+
+    var isBackgroundModeEnabled: Boolean
+        get() = prefs.getBoolean(KEY_BACKGROUND_MODE, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_BACKGROUND_MODE, value).apply()
+        }
+
     companion object {
         const val DEFAULT_HOST = "serenada.app"
         const val HOST_RU = "serenada-app.ru"
@@ -48,6 +55,7 @@ class SettingsStore(context: Context) {
         private const val KEY_HOST = "host"
         private const val KEY_RECONNECT_CID = "reconnect_cid"
         private const val KEY_LANGUAGE = "language"
+        private const val KEY_BACKGROUND_MODE = "background_mode"
 
         fun normalizeLanguage(value: String?): String =
             when (value) {
