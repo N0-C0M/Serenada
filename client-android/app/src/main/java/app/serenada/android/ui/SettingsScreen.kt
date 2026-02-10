@@ -48,6 +48,7 @@ import app.serenada.android.R
 import app.serenada.android.data.SettingsStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -167,27 +168,29 @@ fun SettingsScreen(
                 ) {
                     OutlinedButton(
                         onClick = {
-                            scope.launch(Dispatchers.IO) {
-                                isPinging = true
-                                pingResult = null
-                                try {
-                                    val targetUrl = if (host.startsWith("http")) host else "https://$host"
-                                    val start = System.currentTimeMillis()
-                                    val connection = URL(targetUrl).openConnection() as HttpURLConnection
-                                    connection.connectTimeout = 3000
-                                    connection.readTimeout = 3000
-                                    connection.requestMethod = "HEAD"
-                                    connection.connect() // Connect explicitly
-                                    val responseCode = connection.responseCode // Trigger request
-                                    val end = System.currentTimeMillis()
-                                    pingResult = "${end - start} ms"
-                                    connection.disconnect()
-                                } catch (e: Exception) {
-                                    pingResult = "Error"
-                                    e.printStackTrace()
-                                } finally {
-                                    isPinging = false
+                            isPinging = true
+                            pingResult = null
+                            scope.launch {
+                                val result = withContext(Dispatchers.IO) {
+                                    try {
+                                        val targetUrl = if (host.startsWith("http")) host else "https://$host"
+                                        val start = System.currentTimeMillis()
+                                        val connection = URL(targetUrl).openConnection() as HttpURLConnection
+                                        connection.connectTimeout = 3000
+                                        connection.readTimeout = 3000
+                                        connection.requestMethod = "HEAD"
+                                        connection.connect() // Connect explicitly
+                                        connection.responseCode // Trigger request
+                                        val end = System.currentTimeMillis()
+                                        connection.disconnect()
+                                        "${end - start} ms"
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                        "Error"
+                                    }
                                 }
+                                pingResult = result
+                                isPinging = false
                             }
                         },
                         modifier = Modifier.weight(1f),
