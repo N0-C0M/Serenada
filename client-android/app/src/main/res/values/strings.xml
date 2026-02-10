@@ -4,8 +4,14 @@
 
     <string name="settings_title">Settings</string>
     <string name="settings_save">Save</string>
-    <string name="create_custom_server">Сreate custom server</string>
+    <string name="create_custom_server">Create custom server</string>
     <string name="settings_server_host">Server host</string>
+    <string name="settings_host_global">Global (%1$s)</string>
+    <string name="settings_host_russia">Russia (%1$s)</string>
+    <string name="settings_ping">Ping</string>
+    <string name="settings_device_check">Device Check</string>
+    <string name="settings_latency_result">Latency: %1$s ms</string>
+    <string name="settings_ping_error">Error</string>
     <string name="settings_language">Language</string>
     <string name="settings_language_auto">Auto (default)</string>
     <string name="settings_language_english">English</string>
@@ -61,9 +67,9 @@
     <string name="notification_room">Room %1$s</string>
     <string name="notification_in_call">In call</string>
 
-    <string name="custom">Сustom</string>
+    <string name="custom">Custom</string>
     <string name="camera_enabled">Camera enabled</string>
-    <string name="camera_enabled_info">Camera enabled</string>
+    <string name="camera_enabled_info">Turn on camera when joining a call</string>
     <string name="microphone_enabled">Microphone enabled</string>
     <string name="microphone_enabled_info">Turn on microphone when joining a call</string>
 </resources>

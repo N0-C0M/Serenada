@@ -90,6 +90,7 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
     var pingResult by remember { mutableStateOf<String?>(null) }
     var isPinging by remember { mutableStateOf(false) }
+    var pingFailed by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -132,13 +133,13 @@ fun SettingsScreen(
 
                 HostOptionRow(
                     selected = isDefaultHost,
-                    label = "Global (${SettingsStore.DEFAULT_HOST})",
+                    label = stringResource(R.string.settings_host_global, SettingsStore.DEFAULT_HOST),
                     onClick = { onHostChange(SettingsStore.DEFAULT_HOST) }
                 )
 
                 HostOptionRow(
                     selected = isRuHost,
-                    label = "Russia (${SettingsStore.HOST_RU})",
+                    label = stringResource(R.string.settings_host_russia, SettingsStore.HOST_RU),
                     onClick = { onHostChange(SettingsStore.HOST_RU) }
                 )
 
@@ -170,6 +171,7 @@ fun SettingsScreen(
                         onClick = {
                             isPinging = true
                             pingResult = null
+                            pingFailed = false
                             scope.launch {
                                 val result = withContext(Dispatchers.IO) {
                                     try {
@@ -183,13 +185,14 @@ fun SettingsScreen(
                                         connection.responseCode // Trigger request
                                         val end = System.currentTimeMillis()
                                         connection.disconnect()
-                                        "${end - start} ms"
+                                        "${end - start}"
                                     } catch (e: Exception) {
                                         e.printStackTrace()
-                                        "Error"
+                                        null
                                     }
                                 }
                                 pingResult = result
+                                pingFailed = result == null
                                 isPinging = false
                             }
                         },
@@ -203,7 +206,7 @@ fun SettingsScreen(
                                 color = MaterialTheme.colorScheme.primary
                             )
                         } else {
-                            Text("Ping")
+                            Text(stringResource(R.string.settings_ping))
                         }
                     }
 
@@ -214,15 +217,19 @@ fun SettingsScreen(
                         },
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("Device Check")
+                        Text(stringResource(R.string.settings_device_check))
                     }
                 }
 
-                if (pingResult != null) {
+                if (pingResult != null || pingFailed) {
                     Text(
-                        text = "Latency: $pingResult",
+                        text = if (pingFailed) {
+                            stringResource(R.string.settings_ping_error)
+                        } else {
+                            stringResource(R.string.settings_latency_result, pingResult ?: "")
+                        },
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (pingResult == "Error") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        color = if (pingFailed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 4.dp)
                     )
                 }

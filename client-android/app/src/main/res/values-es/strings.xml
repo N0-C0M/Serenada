@@ -2,10 +2,16 @@
     <string name="app_name">Serenada</string>
     <string name="common_back">Atrás</string>
 
-    <string name="create_custom_server">Сreate custom server</string>
+    <string name="create_custom_server">Crear servidor personalizado</string>
     <string name="settings_title">Ajustes</string>
     <string name="settings_save">Guardar</string>
     <string name="settings_server_host">Servidor</string>
+    <string name="settings_host_global">Global (%1$s)</string>
+    <string name="settings_host_russia">Rusia (%1$s)</string>
+    <string name="settings_ping">Ping</string>
+    <string name="settings_device_check">Comprobación del dispositivo</string>
+    <string name="settings_latency_result">Latencia: %1$s ms</string>
+    <string name="settings_ping_error">Error</string>
     <string name="settings_language">Idioma</string>
     <string name="settings_language_auto">Automático (predeterminado)</string>
     <string name="settings_language_english">English</string>
@@ -61,9 +67,9 @@
     <string name="notification_room">Sala %1$s</string>
     <string name="notification_in_call">En llamada</string>
 
-    <string name="custom">Сustom</string>
-    <string name="camera_enabled">Camera enabled</string>
-    <string name="camera_enabled_info">Camera enabled</string>
-    <string name="microphone_enabled">Microphone enabled</string>
-    <string name="microphone_enabled_info">Turn on microphone when joining a call</string>
+    <string name="custom">Personalizado</string>
+    <string name="camera_enabled">Cámara activada</string>
+    <string name="camera_enabled_info">Activar la cámara al unirse a una llamada</string>
+    <string name="microphone_enabled">Micrófono activado</string>
+    <string name="microphone_enabled_info">Activar el micrófono al unirse a una llamada</string>
 </resources>
