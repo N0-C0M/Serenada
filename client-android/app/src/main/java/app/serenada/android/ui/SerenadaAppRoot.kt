@@ -293,6 +293,7 @@ fun SerenadaAppRoot(
                         onToggleAudio = { callManager.toggleAudio() },
                         onToggleVideo = { callManager.toggleVideo() },
                         onFlipCamera = { callManager.flipCamera() },
+                        onToggleFlashlight = { callManager.toggleFlashlight() },
                         onEndCall = { callManager.endCall() },
                         onStartScreenShare = { intent -> callManager.startScreenShare(intent) },
                         onStopScreenShare = { callManager.stopScreenShare() },

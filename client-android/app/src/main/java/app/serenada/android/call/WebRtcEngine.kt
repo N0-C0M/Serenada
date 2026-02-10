@@ -2,16 +2,24 @@ package app.serenada.android.call
 
 import android.content.Intent
 import android.content.Context
+import android.hardware.camera2.CameraAccessException
+import android.hardware.camera2.CameraCaptureSession
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
+import android.hardware.camera2.CaptureRequest
 import android.hardware.display.DisplayManager
 import android.media.projection.MediaProjection
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.Range
 import android.util.DisplayMetrics
 import android.util.Log
 import java.util.Collections
 import java.util.WeakHashMap
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -48,6 +56,8 @@ class WebRtcEngine(
     private val onRenegotiationNeededCallback: () -> Unit,
     private val onRemoteVideoTrack: (VideoTrack?) -> Unit,
     private val onCameraFacingChanged: (Boolean) -> Unit,
+    private val onCameraModeChanged: (LocalCameraMode) -> Unit,
+    private val onFlashlightStateChanged: (Boolean, Boolean) -> Unit,
     private val onScreenShareStopped: () -> Unit,
     private var isRemoteBlackFrameAnalysisEnabled: Boolean = true
 ) {
@@ -60,7 +70,8 @@ class WebRtcEngine(
     private data class CapturerSelection(
         val capturer: VideoCapturer,
         val isFrontFacing: Boolean,
-        val captureProfile: CaptureProfile
+        val captureProfile: CaptureProfile,
+        val torchCameraId: String?
     )
 
     private data class CaptureProfile(
@@ -86,6 +97,8 @@ class WebRtcEngine(
     private val appContext = context.applicationContext
     private val eglBase: EglBase = EglBase.create()
     private val peerConnectionFactory: PeerConnectionFactory
+    private val cameraManager = appContext.getSystemService(CameraManager::class.java)
+    private val fallbackTorchCameraId: String? = findTorchCameraId()
 
     private var peerConnection: PeerConnection? = null
     private var localVideoTrack: VideoTrack? = null
@@ -97,6 +110,12 @@ class WebRtcEngine(
     private var currentCameraSource = LocalCameraSource.SELFIE
     private var cameraSourceBeforeScreenShare: LocalCameraSource? = null
     private var isScreenSharing = false
+    private var activeTorchCameraId: String? = null
+    private var isTorchPreferenceEnabled = false
+    private var isTorchEnabled = false
+    private var torchSyncRequired = false
+    private var torchRetryRunnable: Runnable? = null
+    private var torchRetryAttempts = 0
     private var compositeSupportCache: Pair<Pair<String, String>, Boolean>? = null
     private var compositeDisabledAfterFailure = false
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -132,6 +151,11 @@ class WebRtcEngine(
 
     fun startLocalMedia() {
         if (localAudioTrack != null || localVideoTrack != null) return
+        cancelTorchRetry()
+        activeTorchCameraId = null
+        isTorchPreferenceEnabled = false
+        torchSyncRequired = false
+        setTorchEnabled(false, notify = false)
         val audioConstraints = MediaConstraints()
         audioSource = peerConnectionFactory.createAudioSource(audioConstraints)
         localAudioTrack = peerConnectionFactory.createAudioTrack("ARDAMSa0", audioSource)
@@ -158,6 +182,11 @@ class WebRtcEngine(
     }
 
     fun stopLocalMedia() {
+        cancelTorchRetry()
+        activeTorchCameraId = null
+        isTorchPreferenceEnabled = false
+        torchSyncRequired = false
+        setTorchEnabled(false)
         isScreenSharing = false
         cameraSourceBeforeScreenShare = null
         localVideoTrack?.setEnabled(false)
@@ -354,10 +383,32 @@ class WebRtcEngine(
         localVideoTrack?.setEnabled(enabled)
     }
 
+    fun toggleFlashlight(): Boolean {
+        if (!isTorchAvailableForCurrentMode()) return false
+        isTorchPreferenceEnabled = !isTorchPreferenceEnabled
+        Log.d(
+            "WebRtcEngine",
+            "Flash toggle requested: preference=$isTorchPreferenceEnabled mode=${activeVideoModeLabel()} torchCamera=$activeTorchCameraId"
+        )
+        if (applyTorchForCurrentMode()) {
+            return true
+        }
+        if (isTorchPreferenceEnabled) {
+            scheduleTorchRetry()
+        }
+        isTorchPreferenceEnabled = isTorchEnabled
+        notifyCameraModeAndFlash()
+        return false
+    }
+
     fun startScreenShare(intent: Intent): Boolean {
         if (isScreenSharing) return true
         val observer = videoSource?.capturerObserver ?: return false
         val previousSource = currentCameraSource
+        cancelTorchRetry()
+        activeTorchCameraId = null
+        torchSyncRequired = false
+        setTorchEnabled(false, notify = false)
         disposeVideoCapturer()
         val capturer = ScreenCapturerAndroid(intent, object : MediaProjection.Callback() {
             override fun onStop() {
@@ -384,6 +435,7 @@ class WebRtcEngine(
                 "Screen share capture profile: ${captureProfile.width}x${captureProfile.height}@${captureProfile.fps}fps"
             )
             onCameraFacingChanged(false)
+            applyTorchForCurrentMode()
             true
         } catch (e: Exception) {
             Log.w("WebRtcEngine", "Failed to start screen sharing", e)
@@ -664,7 +716,11 @@ class WebRtcEngine(
         videoCapturer = selection.capturer
         surfaceTextureHelper = textureHelper
         currentCameraSource = source
+        activeTorchCameraId = selection.torchCameraId
+        isTorchEnabled = false
+        torchSyncRequired = true
         onCameraFacingChanged(selection.isFrontFacing)
+        applyTorchForCurrentMode()
         applyVideoSenderParameters()
         Log.d(
             "WebRtcEngine",
@@ -700,7 +756,8 @@ class WebRtcEngine(
                                 enumerator = enumerator,
                                 deviceNames = listOf(front),
                                 policy = cameraCapturePolicyFor(LocalCameraSource.SELFIE)
-                            )
+                            ),
+                            torchCameraId = null
                         )
                     }
                 } else if (back != null) {
@@ -712,7 +769,8 @@ class WebRtcEngine(
                                 enumerator = enumerator,
                                 deviceNames = listOf(back),
                                 policy = cameraCapturePolicyFor(LocalCameraSource.SELFIE)
-                            )
+                            ),
+                            torchCameraId = back.takeIf { hasFlashUnit(it) }
                         )
                     }
                 } else {
@@ -732,7 +790,8 @@ class WebRtcEngine(
                                 enumerator = enumerator,
                                 deviceNames = listOf(back),
                                 policy = cameraCapturePolicyFor(LocalCameraSource.WORLD)
-                            )
+                            ),
+                            torchCameraId = back.takeIf { hasFlashUnit(it) }
                         )
                     }
                 }
@@ -765,7 +824,8 @@ class WebRtcEngine(
                                 onStartFailure = { onCompositeStartFailure() }
                             ),
                             isFrontFacing = false,
-                            captureProfile = profile
+                            captureProfile = profile,
+                            torchCameraId = back.takeIf { hasFlashUnit(it) }
                         )
                     }
                 }
@@ -1054,6 +1114,288 @@ class WebRtcEngine(
         return supported
     }
 
+    private fun findTorchCameraId(): String? {
+        val manager = cameraManager ?: return null
+        return runCatching {
+            manager.cameraIdList.firstOrNull { cameraId ->
+                val characteristics = manager.getCameraCharacteristics(cameraId)
+                val hasFlash = characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+                val lensFacing = characteristics.get(CameraCharacteristics.LENS_FACING)
+                hasFlash && lensFacing == CameraCharacteristics.LENS_FACING_BACK
+            }
+        }.onFailure { error ->
+            Log.w("WebRtcEngine", "Failed to query torch camera id", error)
+        }.getOrNull()
+    }
+
+    private fun hasFlashUnit(cameraId: String): Boolean {
+        val manager = cameraManager ?: return false
+        return runCatching {
+            manager.getCameraCharacteristics(cameraId)
+                .get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+        }.onFailure { error ->
+            Log.w("WebRtcEngine", "Failed to query flash availability for camera=$cameraId", error)
+        }.getOrDefault(false)
+    }
+
+    private fun supportsTorchForSource(source: LocalCameraSource): Boolean {
+        val supportsMode = source == LocalCameraSource.WORLD || source == LocalCameraSource.COMPOSITE
+        if (!supportsMode) return false
+        return activeTorchCameraId != null || fallbackTorchCameraId != null
+    }
+
+    private fun isTorchAvailableForCurrentMode(): Boolean {
+        if (isScreenSharing) return false
+        return supportsTorchForSource(currentCameraSource)
+    }
+
+    private fun applyTorchForCurrentMode(): Boolean {
+        cancelTorchRetry()
+        val shouldEnable = isTorchAvailableForCurrentMode() && isTorchPreferenceEnabled
+        val allowGlobalFallback = !shouldEnable || !torchSyncRequired
+        val applied = setTorchEnabled(
+            enabled = shouldEnable,
+            notify = false,
+            allowGlobalFallback = allowGlobalFallback
+        )
+        if (!applied && shouldEnable && torchSyncRequired) {
+            scheduleTorchRetry()
+        }
+        notifyCameraModeAndFlash()
+        return applied
+    }
+
+    private fun setTorchEnabled(
+        enabled: Boolean,
+        notify: Boolean = true,
+        allowGlobalFallback: Boolean = true
+    ): Boolean {
+        if (isTorchEnabled == enabled && !torchSyncRequired) {
+            if (notify) {
+                notifyCameraModeAndFlash()
+            }
+            return true
+        }
+        if (applyTorchViaCaptureRequest(enabled)) {
+            isTorchEnabled = enabled
+            torchSyncRequired = false
+            Log.d(
+                "WebRtcEngine",
+                "Torch mode set via capture request: enabled=$enabled mode=${activeVideoModeLabel()} camera=$activeTorchCameraId"
+            )
+            if (notify) {
+                notifyCameraModeAndFlash()
+            }
+            return true
+        }
+        if (!allowGlobalFallback) {
+            if (!enabled) {
+                isTorchEnabled = false
+                torchSyncRequired = false
+                if (notify) {
+                    notifyCameraModeAndFlash()
+                }
+            }
+            return false
+        }
+        val manager = cameraManager
+        val cameraId = activeTorchCameraId ?: fallbackTorchCameraId
+        if (manager == null || cameraId == null) {
+            if (!enabled) {
+                isTorchEnabled = false
+                torchSyncRequired = false
+                if (notify) {
+                    notifyCameraModeAndFlash()
+                }
+                return true
+            }
+            Log.w("WebRtcEngine", "Torch unavailable. managerPresent=${manager != null} cameraId=$cameraId")
+            return false
+        }
+        return try {
+            manager.setTorchMode(cameraId, enabled)
+            isTorchEnabled = enabled
+            torchSyncRequired = false
+            Log.d("WebRtcEngine", "Torch mode set: enabled=$enabled cameraId=$cameraId")
+            if (notify) {
+                notifyCameraModeAndFlash()
+            }
+            true
+        } catch (error: CameraAccessException) {
+            Log.w("WebRtcEngine", "Failed to set torch mode", error)
+            if (!enabled) {
+                isTorchEnabled = false
+                torchSyncRequired = false
+                if (notify) {
+                    notifyCameraModeAndFlash()
+                }
+            }
+            false
+        } catch (error: SecurityException) {
+            Log.w("WebRtcEngine", "Torch permission denied", error)
+            if (!enabled) {
+                isTorchEnabled = false
+                torchSyncRequired = false
+                if (notify) {
+                    notifyCameraModeAndFlash()
+                }
+            }
+            false
+        } catch (error: IllegalArgumentException) {
+            Log.w("WebRtcEngine", "Torch camera id invalid", error)
+            if (!enabled) {
+                isTorchEnabled = false
+                torchSyncRequired = false
+                if (notify) {
+                    notifyCameraModeAndFlash()
+                }
+            }
+            false
+        }
+    }
+
+    private fun scheduleTorchRetry() {
+        if (!torchSyncRequired) return
+        if (!isTorchPreferenceEnabled) return
+        if (!isTorchAvailableForCurrentMode()) return
+        if (torchRetryRunnable != null) return
+        torchRetryAttempts = 0
+        val runnable = object : Runnable {
+            override fun run() {
+                torchRetryRunnable = null
+                if (!torchSyncRequired || !isTorchPreferenceEnabled || !isTorchAvailableForCurrentMode()) {
+                    notifyCameraModeAndFlash()
+                    return
+                }
+                val applied = setTorchEnabled(
+                    enabled = true,
+                    notify = false,
+                    allowGlobalFallback = false
+                )
+                notifyCameraModeAndFlash()
+                if (applied) {
+                    return
+                }
+                torchRetryAttempts += 1
+                if (torchRetryAttempts >= MAX_TORCH_RETRY_ATTEMPTS) {
+                    return
+                }
+                torchRetryRunnable = this
+                mainHandler.postDelayed(this, TORCH_RETRY_DELAY_MS)
+            }
+        }
+        torchRetryRunnable = runnable
+        mainHandler.postDelayed(runnable, TORCH_RETRY_DELAY_MS)
+    }
+
+    private fun cancelTorchRetry() {
+        torchRetryRunnable?.let { mainHandler.removeCallbacks(it) }
+        torchRetryRunnable = null
+        torchRetryAttempts = 0
+    }
+
+    private fun applyTorchViaCaptureRequest(enabled: Boolean): Boolean {
+        val session = resolveActiveCamera2Session() ?: return false
+        val cameraHandler = readFieldValue(session, "cameraThreadHandler") as? Handler ?: return false
+        val latch = CountDownLatch(1)
+        var applied = false
+        cameraHandler.post {
+            applied = runCatching { applyTorchViaCaptureRequestInternal(session, cameraHandler, enabled) }
+                .onFailure { error ->
+                    Log.w("WebRtcEngine", "Failed to apply torch via capture request", error)
+                }
+                .getOrDefault(false)
+            latch.countDown()
+        }
+        if (!latch.await(750, TimeUnit.MILLISECONDS)) {
+            Log.w("WebRtcEngine", "Timed out waiting for torch capture request")
+            return false
+        }
+        return applied
+    }
+
+    private fun applyTorchViaCaptureRequestInternal(
+        session: Any,
+        cameraHandler: Handler,
+        enabled: Boolean
+    ): Boolean {
+        val captureSession = readFieldValue(session, "captureSession") as? CameraCaptureSession ?: return false
+        val cameraDevice = readFieldValue(session, "cameraDevice") as? CameraDevice ?: return false
+        val surface = readFieldValue(session, "surface") as? android.view.Surface ?: return false
+        val captureFormat = readFieldValue(session, "captureFormat") ?: return false
+        val framerate = readFieldValue(captureFormat, "framerate") ?: return false
+        val minFps = readFieldValue(framerate, "min") as? Int ?: return false
+        val maxFps = readFieldValue(framerate, "max") as? Int ?: return false
+        val fpsUnitFactor = readFieldValue(session, "fpsUnitFactor") as? Int ?: return false
+        val builder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
+        builder.set(
+            CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,
+            Range(minFps / fpsUnitFactor, maxFps / fpsUnitFactor)
+        )
+        builder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
+        builder.set(CaptureRequest.CONTROL_AE_LOCK, false)
+        runCatching {
+            builder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO)
+        }
+        builder.set(
+            CaptureRequest.FLASH_MODE,
+            if (enabled) CaptureRequest.FLASH_MODE_TORCH else CaptureRequest.FLASH_MODE_OFF
+        )
+        builder.addTarget(surface)
+        captureSession.setRepeatingRequest(builder.build(), null, cameraHandler)
+        return true
+    }
+
+    private fun resolveActiveCamera2Session(): Any? {
+        val capturer = when (val activeCapturer = videoCapturer) {
+            is CompositeCameraCapturer -> activeCapturer.mainCameraCapturerForTorch()
+            else -> activeCapturer
+        } ?: return null
+        val session = readFieldValueFromHierarchy(capturer, "currentSession") ?: return null
+        return if (session.javaClass.name == "org.webrtc.Camera2Session") session else null
+    }
+
+    private fun readFieldValue(instance: Any, fieldName: String): Any? {
+        return runCatching {
+            val field = instance.javaClass.getDeclaredField(fieldName)
+            field.isAccessible = true
+            field.get(instance)
+        }.getOrNull()
+    }
+
+    private fun readFieldValueFromHierarchy(instance: Any, fieldName: String): Any? {
+        var current: Class<*>? = instance.javaClass
+        while (current != null) {
+            val value = try {
+                val field = current.getDeclaredField(fieldName)
+                field.isAccessible = true
+                field.get(instance)
+            } catch (_: Exception) {
+                null
+            }
+            if (value != null) {
+                return value
+            }
+            current = current.superclass
+        }
+        return null
+    }
+
+    private fun activeCameraMode(): LocalCameraMode {
+        if (isScreenSharing) return LocalCameraMode.SCREEN_SHARE
+        return when (currentCameraSource) {
+            LocalCameraSource.SELFIE -> LocalCameraMode.SELFIE
+            LocalCameraSource.WORLD -> LocalCameraMode.WORLD
+            LocalCameraSource.COMPOSITE -> LocalCameraMode.COMPOSITE
+        }
+    }
+
+    private fun notifyCameraModeAndFlash() {
+        val flashAvailable = isTorchAvailableForCurrentMode()
+        onCameraModeChanged(activeCameraMode())
+        onFlashlightStateChanged(flashAvailable, flashAvailable && isTorchEnabled)
+    }
+
     private fun onRemoteVideoFrame(frame: org.webrtc.VideoFrame) {
         val stateChanged =
             remoteBlackFrameAnalyzer.onFrame(
@@ -1093,5 +1435,7 @@ class WebRtcEngine(
         const val SCREEN_SHARE_MIN_BITRATE_BPS = 1_000_000
 
         const val MAX_CAPTURE_FPS = 60
+        const val TORCH_RETRY_DELAY_MS = 120L
+        const val MAX_TORCH_RETRY_ATTEMPTS = 8
     }
 }

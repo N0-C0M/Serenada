@@ -148,6 +148,8 @@ class CompositeCameraCapturer(
 
     override fun isScreencast(): Boolean = false
 
+    fun mainCameraCapturerForTorch(): CameraVideoCapturer = mainCapturer
+
     private fun onChildCapturerStarted(capturer: ChildCapturer, success: Boolean) {
         if (!started) return
         if (!success) {

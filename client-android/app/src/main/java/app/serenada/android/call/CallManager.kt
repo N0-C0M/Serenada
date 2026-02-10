@@ -164,6 +164,21 @@ class CallManager(context: Context) {
                 updateState(_uiState.value.copy(isFrontCamera = isFront))
             }
         },
+        onCameraModeChanged = { mode ->
+            handler.post {
+                updateState(_uiState.value.copy(localCameraMode = mode))
+            }
+        },
+        onFlashlightStateChanged = { available, enabled ->
+            handler.post {
+                updateState(
+                    _uiState.value.copy(
+                        isFlashAvailable = available,
+                        isFlashEnabled = enabled
+                    )
+                )
+            }
+        },
         onScreenShareStopped = {
             handler.post {
                 if (_uiState.value.isScreenSharing) {
@@ -362,7 +377,10 @@ class CallManager(context: Context) {
                 errorMessageResId = null,
                 errorMessageText = null,
                 localAudioEnabled = defaultAudio,
-                localVideoEnabled = defaultVideo
+                localVideoEnabled = defaultVideo,
+                localCameraMode = LocalCameraMode.SELFIE,
+                isFlashAvailable = false,
+                isFlashEnabled = false
             )
         )
 
@@ -415,6 +433,10 @@ class CallManager(context: Context) {
         val enabled = !_uiState.value.localVideoEnabled
         webRtcEngine.toggleVideo(enabled)
         updateState(_uiState.value.copy(localVideoEnabled = enabled))
+    }
+
+    fun toggleFlashlight() {
+        webRtcEngine.toggleFlashlight()
     }
 
     fun flipCamera() {

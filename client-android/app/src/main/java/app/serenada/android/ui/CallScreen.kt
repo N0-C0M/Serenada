@@ -59,6 +59,7 @@ import androidx.compose.ui.zIndex
 import app.serenada.android.R
 import app.serenada.android.call.CallPhase
 import app.serenada.android.call.CallUiState
+import app.serenada.android.call.LocalCameraMode
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import kotlin.math.abs
@@ -81,6 +82,7 @@ fun CallScreen(
     onToggleAudio: () -> Unit,
     onToggleVideo: () -> Unit,
     onFlipCamera: () -> Unit,
+    onToggleFlashlight: () -> Unit,
     onEndCall: () -> Unit,
     // Added callbacks for Screen Share
     onStartScreenShare: (Intent) -> Unit = {},
@@ -418,25 +420,57 @@ fun CallScreen(
             }
         }
 
-        // Zoom/Fit Button (Top Right)
-        if (uiState.remoteVideoEnabled && !isLocalLarge) {
-            IconButton(
-                onClick = { remoteVideoFitCover = !remoteVideoFitCover },
+        val isWorldOrCompositeMode =
+            uiState.localCameraMode == LocalCameraMode.WORLD ||
+                    uiState.localCameraMode == LocalCameraMode.COMPOSITE
+        val showFlashButton =
+            uiState.phase == CallPhase.InCall &&
+                    isWorldOrCompositeMode &&
+                    uiState.isFlashAvailable
+        val showRemoteFitButton = uiState.remoteVideoEnabled && !isLocalLarge
+        if (showFlashButton || showRemoteFitButton) {
+            Column(
                 modifier =
                     Modifier.align(Alignment.TopEnd)
                         .statusBarsPadding()
                         .padding(top = 16.dp, end = 16.dp)
-                        .size(44.dp)
-                        .background(Color.Black.copy(alpha = 0.4f), CircleShape)
-                        .zIndex(2f)
+                        .zIndex(2f),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalAlignment = Alignment.End
             ) {
-                Icon(
-                    imageVector =
-                        if (remoteVideoFitCover) Icons.Default.FullscreenExit
-                        else Icons.Default.Fullscreen,
-                    contentDescription = stringResource(R.string.call_toggle_video_fit),
-                    tint = Color.White
-                )
+                if (showFlashButton) {
+                    IconButton(
+                        onClick = onToggleFlashlight,
+                        modifier =
+                            Modifier.size(44.dp)
+                                .background(Color.Black.copy(alpha = 0.4f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector =
+                                if (uiState.isFlashEnabled) Icons.Default.FlashOn
+                                else Icons.Default.FlashOff,
+                            contentDescription = stringResource(R.string.call_toggle_flashlight),
+                            tint = Color.White
+                        )
+                    }
+                }
+
+                if (showRemoteFitButton) {
+                    IconButton(
+                        onClick = { remoteVideoFitCover = !remoteVideoFitCover },
+                        modifier =
+                            Modifier.size(44.dp)
+                                .background(Color.Black.copy(alpha = 0.4f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector =
+                                if (remoteVideoFitCover) Icons.Default.FullscreenExit
+                                else Icons.Default.Fullscreen,
+                            contentDescription = stringResource(R.string.call_toggle_video_fit),
+                            tint = Color.White
+                        )
+                    }
+                }
             }
         }
 
@@ -909,4 +943,3 @@ private fun shareLink(context: Context, text: String, chooserTitle: String) {
         }
     context.startActivity(Intent.createChooser(intent, chooserTitle))
 }
-

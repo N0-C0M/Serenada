@@ -18,5 +18,8 @@ data class CallUiState(
     val signalingState: String = "STABLE",
     val activeTransport: String? = null,
     val isFrontCamera: Boolean = true,
-    val isScreenSharing: Boolean = false
+    val isScreenSharing: Boolean = false,
+    val localCameraMode: LocalCameraMode = LocalCameraMode.SELFIE,
+    val isFlashAvailable: Boolean = false,
+    val isFlashEnabled: Boolean = false
 )
