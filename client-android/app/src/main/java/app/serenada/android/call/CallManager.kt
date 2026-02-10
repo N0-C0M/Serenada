@@ -163,6 +163,13 @@ class CallManager(context: Context) {
             handler.post {
                 updateState(_uiState.value.copy(isFrontCamera = isFront))
             }
+        },
+        onScreenShareStopped = {
+            handler.post {
+                if (_uiState.value.isScreenSharing) {
+                    updateState(_uiState.value.copy(isScreenSharing = false))
+                }
+            }
         }
     )
 
@@ -419,28 +426,19 @@ class CallManager(context: Context) {
 
     fun startScreenShare(intent: Intent) {
         if (_uiState.value.isScreenSharing) return
-        try {
-            val method = webRtcEngine::class.java.getMethod("startScreenShare", Intent::class.java)
-            method.invoke(webRtcEngine, intent)
-        } catch (e: Exception) {
-            Log.e("CallManager", "WebRtcEngine.startScreenShare not found. Please implement it.", e)
+        if (!webRtcEngine.startScreenShare(intent)) {
+            Log.w("CallManager", "Failed to start screen sharing")
             return
         }
-
         updateState(_uiState.value.copy(isScreenSharing = true))
     }
 
     fun stopScreenShare() {
         if (!_uiState.value.isScreenSharing) return
-
-        try {
-            val method = webRtcEngine::class.java.getMethod("stopScreenShare")
-            method.invoke(webRtcEngine)
-        } catch (e: Exception) {
-            Log.e("CallManager", "WebRtcEngine.stopScreenShare not found. Please implement it.", e)
+        if (!webRtcEngine.stopScreenShare()) {
+            Log.w("CallManager", "Failed to stop screen sharing")
             return
         }
-
         updateState(_uiState.value.copy(isScreenSharing = false))
     }
 
@@ -915,15 +913,9 @@ class CallManager(context: Context) {
                 statusMessageResId = messageResId
             )
         )
-
-
+        saveCurrentCallToHistoryIfNeeded()
         if (uiState.value.isScreenSharing) {
-            try {
-                val method = webRtcEngine::class.java.getMethod("stopScreenShare")
-                method.invoke(webRtcEngine)
-            } catch (e: Exception) {
-
-            }
+            webRtcEngine.stopScreenShare()
         }
 
         settingsStore.reconnectCid = null
@@ -992,5 +984,22 @@ class CallManager(context: Context) {
         } else {
             signalingClient.connect(serverHost.value)
         }
+    }
+
+    private fun saveCurrentCallToHistoryIfNeeded() {
+        val roomId = currentRoomId ?: return
+        val startTime = callStartTimeMs ?: return
+        val durationSeconds = ((System.currentTimeMillis() - startTime) / 1000L)
+            .coerceAtLeast(0L)
+            .toInt()
+        recentCallStore.saveCall(
+            RecentCall(
+                roomId = roomId,
+                startTime = startTime,
+                durationSeconds = durationSeconds
+            )
+        )
+        callStartTimeMs = null
+        refreshRecentCalls()
     }
 }

@@ -1,7 +1,9 @@
 package app.serenada.android.call
 
+import android.content.Intent
 import android.content.Context
 import android.hardware.camera2.CameraManager
+import android.media.projection.MediaProjection
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -21,6 +23,7 @@ import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
 import org.webrtc.RendererCommon
 import org.webrtc.RtpTransceiver
+import org.webrtc.ScreenCapturerAndroid
 import org.webrtc.SessionDescription
 import org.webrtc.SurfaceTextureHelper
 import org.webrtc.SurfaceViewRenderer
@@ -38,6 +41,7 @@ class WebRtcEngine(
     private val onRenegotiationNeededCallback: () -> Unit,
     private val onRemoteVideoTrack: (VideoTrack?) -> Unit,
     private val onCameraFacingChanged: (Boolean) -> Unit,
+    private val onScreenShareStopped: () -> Unit,
     private var isRemoteBlackFrameAnalysisEnabled: Boolean = true
 ) {
     private enum class LocalCameraSource {
@@ -63,6 +67,8 @@ class WebRtcEngine(
     private var audioSource: AudioSource? = null
     private var surfaceTextureHelper: SurfaceTextureHelper? = null
     private var currentCameraSource = LocalCameraSource.SELFIE
+    private var cameraSourceBeforeScreenShare: LocalCameraSource? = null
+    private var isScreenSharing = false
     private var compositeSupportCache: Pair<Pair<String, String>, Boolean>? = null
     private var compositeDisabledAfterFailure = false
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -124,6 +130,8 @@ class WebRtcEngine(
     }
 
     fun stopLocalMedia() {
+        isScreenSharing = false
+        cameraSourceBeforeScreenShare = null
         localVideoTrack?.setEnabled(false)
         localAudioTrack?.setEnabled(false)
         disposeVideoCapturer()
@@ -183,6 +191,7 @@ class WebRtcEngine(
     }
 
     fun flipCamera() {
+        if (isScreenSharing) return
         if (videoSource == null) return
         var target = when (currentCameraSource) {
             LocalCameraSource.SELFIE -> LocalCameraSource.WORLD
@@ -317,6 +326,54 @@ class WebRtcEngine(
 
     fun toggleVideo(enabled: Boolean) {
         localVideoTrack?.setEnabled(enabled)
+    }
+
+    fun startScreenShare(intent: Intent): Boolean {
+        if (isScreenSharing) return true
+        val observer = videoSource?.capturerObserver ?: return false
+        val previousSource = currentCameraSource
+        disposeVideoCapturer()
+        val capturer = ScreenCapturerAndroid(intent, object : MediaProjection.Callback() {
+            override fun onStop() {
+                mainHandler.post {
+                    if (isScreenSharing) {
+                        stopScreenShare()
+                        onScreenShareStopped()
+                    }
+                }
+            }
+        })
+        val textureHelper = SurfaceTextureHelper.create("ScreenCaptureThread", eglBase.eglBaseContext)
+        return try {
+            capturer.initialize(textureHelper, appContext, observer)
+            capturer.startCapture(CAPTURE_WIDTH, CAPTURE_HEIGHT, CAPTURE_FPS)
+            videoCapturer = capturer
+            surfaceTextureHelper = textureHelper
+            cameraSourceBeforeScreenShare = previousSource
+            isScreenSharing = true
+            onCameraFacingChanged(false)
+            true
+        } catch (e: Exception) {
+            Log.w("WebRtcEngine", "Failed to start screen sharing", e)
+            runCatching { capturer.dispose() }
+            runCatching { textureHelper.dispose() }
+            if (!restartVideoCapturer(previousSource)) {
+                restartVideoCapturer(LocalCameraSource.SELFIE)
+            }
+            false
+        }
+    }
+
+    fun stopScreenShare(): Boolean {
+        if (!isScreenSharing) return true
+        val sourceToRestore = cameraSourceBeforeScreenShare ?: currentCameraSource
+        isScreenSharing = false
+        cameraSourceBeforeScreenShare = null
+        disposeVideoCapturer()
+        if (!restartVideoCapturer(sourceToRestore) && !restartVideoCapturer(LocalCameraSource.SELFIE)) {
+            Log.w("WebRtcEngine", "Failed to restore camera after screen sharing stop")
+        }
+        return true
     }
 
     fun setRemoteBlackFrameAnalysisEnabled(enabled: Boolean) {

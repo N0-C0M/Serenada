@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
@@ -20,7 +21,15 @@ class CallService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_START) {
             val roomId = intent.getStringExtra(EXTRA_ROOM_ID).orEmpty()
-            startForeground(NOTIFICATION_ID, buildNotification(roomId))
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val serviceTypes =
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or
+                            ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
+                            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+                startForeground(NOTIFICATION_ID, buildNotification(roomId), serviceTypes)
+            } else {
+                startForeground(NOTIFICATION_ID, buildNotification(roomId))
+            }
         }
         return START_NOT_STICKY
     }
