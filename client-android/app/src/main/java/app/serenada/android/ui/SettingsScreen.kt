@@ -235,7 +235,7 @@ fun SettingsScreen(
                 }
 
                 TextButton(
-                    onClick = { uriHandler.openUri("https://github.com/N0-C0M/serenada") },
+                    onClick = { uriHandler.openUri("https://github.com/agatx/serenada") },
                     modifier = Modifier.align(Alignment.End)
                 ) {
                     Text(stringResource(R.string.create_custom_server))
