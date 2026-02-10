@@ -226,9 +226,11 @@ fun SerenadaAppRoot(
                         isBackgroundModeEnabled = callManager.isBackgroundModeEnabled.value,
                         isDefaultCameraEnabled = callManager.isDefaultCameraEnabled.value,
                         isDefaultMicrophoneEnabled = callManager.isDefaultMicrophoneEnabled.value,
+                        isHdVideoExperimentalEnabled = callManager.isHdVideoExperimentalEnabled.value,
                         onBackgroundModeChange = { callManager.updateBackgroundMode(it) },
                         onDefaultCameraChange = { callManager.updateDefaultCamera(it) },
                         onDefaultMicrophoneChange = { callManager.updateDefaultMicrophone(it) },
+                        onHdVideoExperimentalChange = { callManager.updateHdVideoExperimental(it) },
 
                         onHostChange = {
                             hostInput = it

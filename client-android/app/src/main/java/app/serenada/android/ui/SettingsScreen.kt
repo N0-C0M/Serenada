@@ -66,6 +66,7 @@ fun SettingsScreen(
     isBackgroundModeEnabled: Boolean,
     isDefaultCameraEnabled: Boolean,
     isDefaultMicrophoneEnabled: Boolean,
+    isHdVideoExperimentalEnabled: Boolean,
     hostError: String?,
     isSaving: Boolean,
     onHostChange: (String) -> Unit,
@@ -73,6 +74,7 @@ fun SettingsScreen(
     onBackgroundModeChange: (Boolean) -> Unit,
     onDefaultCameraChange: (Boolean) -> Unit,
     onDefaultMicrophoneChange: (Boolean) -> Unit,
+    onHdVideoExperimentalChange: (Boolean) -> Unit,
     onSave: () -> Unit,
     onCancel: () -> Unit
 ) {
@@ -306,6 +308,17 @@ fun SettingsScreen(
                         subLabel = stringResource(R.string.microphone_enabled_info),
                         checked = isDefaultMicrophoneEnabled,
                         onCheckedChange = onDefaultMicrophoneChange
+                    )
+
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+
+                    SettingsSwitchRow(
+                        label = stringResource(R.string.settings_hd_video_experimental),
+                        subLabel = stringResource(R.string.settings_hd_video_experimental_info),
+                        checked = isHdVideoExperimentalEnabled,
+                        onCheckedChange = onHdVideoExperimentalChange
                     )
                 }
             }

@@ -13,6 +13,7 @@ A simple, privacy-focused 1:1 video calling application built with WebRTC. No ac
 - **Mobile-friendly** – Works on Android Chrome, iOS Safari, and desktop browsers
 - **Recent calls on home** – Web and Android home screens show your latest calls with live room occupancy (Android supports long-press remove)
 - **Android camera source cycle** – In-call source switch cycles through `selfie` (default) -> `world` -> `composite` (world feed with circular selfie overlay), automatically skips `composite` when unsupported, and shows a flashlight toggle in `world`/`composite` when flash hardware is available; flashlight preference is remembered during the call and reapplied when returning to supported modes
+- **Android HD video toggle (experimental)** – Settings include an `HD Video (experimental)` switch for higher camera/composite quality; default mode keeps legacy `640x480` camera constraints for stability
 - **Self-hostable** – Run your own instance with full control
 - **Optional join alerts** – Encrypted push notifications with snapshot previews (opt-in)
 

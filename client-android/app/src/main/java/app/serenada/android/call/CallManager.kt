@@ -65,6 +65,10 @@ class CallManager(context: Context) {
     private val _isDefaultMicrophoneEnabled = mutableStateOf(settingsStore.isDefaultMicrophoneEnabled)
     val isDefaultMicrophoneEnabled: State<Boolean> = _isDefaultMicrophoneEnabled
 
+    private val _isHdVideoExperimentalEnabled =
+        mutableStateOf(settingsStore.isHdVideoExperimentalEnabled)
+    val isHdVideoExperimentalEnabled: State<Boolean> = _isHdVideoExperimentalEnabled
+
     private val _recentCalls = mutableStateOf<List<RecentCall>>(emptyList())
     val recentCalls: State<List<RecentCall>> = _recentCalls
 
@@ -185,7 +189,8 @@ class CallManager(context: Context) {
                     updateState(_uiState.value.copy(isScreenSharing = false))
                 }
             }
-        }
+        },
+        isHdVideoExperimentalEnabled = settingsStore.isHdVideoExperimentalEnabled
     )
 
     private val signalingClient = SignalingClient(okHttpClient, handler, object : SignalingClient.Listener {
@@ -272,6 +277,12 @@ class CallManager(context: Context) {
     fun updateDefaultMicrophone(enabled: Boolean) {
         settingsStore.isDefaultMicrophoneEnabled = enabled
         _isDefaultMicrophoneEnabled.value = enabled
+    }
+
+    fun updateHdVideoExperimental(enabled: Boolean) {
+        settingsStore.isHdVideoExperimentalEnabled = enabled
+        _isHdVideoExperimentalEnabled.value = enabled
+        webRtcEngine.setHdVideoExperimentalEnabled(enabled)
     }
 
     fun handleDeepLink(uri: Uri) {

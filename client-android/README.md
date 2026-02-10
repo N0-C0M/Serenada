@@ -145,6 +145,7 @@ adb shell am start -a android.intent.action.VIEW -d "https://serenada.app/call/R
 ## Settings
 Server host is configurable in the in-app Settings screen (Join screen → Settings).
 On Save, the app validates `https://<host>/api/room-id` and only persists hosts that respond with the expected Serenada room ID payload.
+`Call defaults` also include `HD Video (experimental)`; when disabled (default), camera capture uses legacy `640x480`, and when enabled the app applies higher per-mode camera/composite targets.
 
 ## Known limitations
 - WebSocket signaling only

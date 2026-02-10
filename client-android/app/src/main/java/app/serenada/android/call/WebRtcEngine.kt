@@ -59,6 +59,7 @@ class WebRtcEngine(
     private val onCameraModeChanged: (LocalCameraMode) -> Unit,
     private val onFlashlightStateChanged: (Boolean, Boolean) -> Unit,
     private val onScreenShareStopped: () -> Unit,
+    private var isHdVideoExperimentalEnabled: Boolean = false,
     private var isRemoteBlackFrameAnalysisEnabled: Boolean = true
 ) {
     private enum class LocalCameraSource {
@@ -88,10 +89,10 @@ class WebRtcEngine(
     )
 
     private data class VideoSenderPolicy(
-        val maxBitrateBps: Int,
-        val minBitrateBps: Int,
-        val maxFramerate: Int,
-        val degradationPreference: RtpParameters.DegradationPreference
+        val maxBitrateBps: Int?,
+        val minBitrateBps: Int?,
+        val maxFramerate: Int?,
+        val degradationPreference: RtpParameters.DegradationPreference?
     )
 
     private val appContext = context.applicationContext
@@ -381,6 +382,17 @@ class WebRtcEngine(
 
     fun toggleVideo(enabled: Boolean) {
         localVideoTrack?.setEnabled(enabled)
+    }
+
+    fun setHdVideoExperimentalEnabled(enabled: Boolean) {
+        if (isHdVideoExperimentalEnabled == enabled) return
+        isHdVideoExperimentalEnabled = enabled
+        if (!isScreenSharing && localVideoTrack != null && videoSource != null) {
+            if (!restartVideoCapturer(currentCameraSource)) {
+                Log.w("WebRtcEngine", "Failed to apply HD video setting by restarting capturer")
+            }
+        }
+        applyVideoSenderParameters()
     }
 
     fun toggleFlashlight(): Boolean {
@@ -688,7 +700,7 @@ class WebRtcEngine(
             sender.setParameters(params)
             Log.d(
                 "WebRtcEngine",
-                "Video sender policy applied: max=${policy.maxBitrateBps} min=${policy.minBitrateBps} fps=${policy.maxFramerate} mode=${activeVideoModeLabel()}"
+                "Video sender policy applied: max=${policy.maxBitrateBps ?: "default"} min=${policy.minBitrateBps ?: "default"} fps=${policy.maxFramerate ?: "default"} mode=${activeVideoModeLabel()}"
             )
         } catch (e: Exception) {
             Log.w("WebRtcEngine", "Failed to apply video sender parameters", e)
@@ -834,6 +846,14 @@ class WebRtcEngine(
     }
 
     private fun cameraCapturePolicyFor(source: LocalCameraSource): CapturePolicy {
+        if (!isHdVideoExperimentalEnabled) {
+            return CapturePolicy(
+                targetWidth = LEGACY_CAMERA_WIDTH,
+                targetHeight = LEGACY_CAMERA_HEIGHT,
+                targetFps = LEGACY_CAMERA_FPS,
+                minFps = LEGACY_CAMERA_MIN_FPS
+            )
+        }
         return when (source) {
             LocalCameraSource.COMPOSITE -> {
                 CapturePolicy(
@@ -871,6 +891,14 @@ class WebRtcEngine(
                 minBitrateBps = SCREEN_SHARE_MIN_BITRATE_BPS,
                 maxFramerate = SCREEN_SHARE_TARGET_FPS,
                 degradationPreference = RtpParameters.DegradationPreference.MAINTAIN_RESOLUTION
+            )
+        }
+        if (!isHdVideoExperimentalEnabled) {
+            return VideoSenderPolicy(
+                maxBitrateBps = null,
+                minBitrateBps = null,
+                maxFramerate = null,
+                degradationPreference = null
             )
         }
         return when (currentCameraSource) {
@@ -1412,6 +1440,11 @@ class WebRtcEngine(
     }
 
     private companion object {
+        const val LEGACY_CAMERA_WIDTH = 640
+        const val LEGACY_CAMERA_HEIGHT = 480
+        const val LEGACY_CAMERA_FPS = 30
+        const val LEGACY_CAMERA_MIN_FPS = 15
+
         const val CAMERA_TARGET_WIDTH = 1280
         const val CAMERA_TARGET_HEIGHT = 720
         const val CAMERA_TARGET_FPS = 30
