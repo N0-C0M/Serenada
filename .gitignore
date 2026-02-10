@@ -15,6 +15,7 @@ server/server
 
 # OS
 .DS_Store
+.idea/
 coturn/turnserver.prod.conf
 server/data/vapid.json
 server/data/subscriptions.db
