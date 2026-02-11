@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useSignaling } from '../contexts/SignalingContext';
 import { useWebRTC } from '../contexts/WebRTCContext';
 import { useToast } from '../contexts/ToastContext';
-import { Mic, MicOff, Video, VideoOff, PhoneOff, Copy, AlertCircle, RotateCcw, Maximize2, Minimize2, CheckSquare, Square, ScreenShare, ScreenShareOff } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, PhoneOff, Copy, AlertCircle, RotateCcw, Maximize2, Minimize2, CheckSquare, Square } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import { saveCall } from '../utils/callHistory';
 import { useTranslation } from 'react-i18next';
@@ -205,10 +205,6 @@ const CallRoom: React.FC = () => {
     const {
         startLocalMedia,
         stopLocalMedia,
-        startScreenShare,
-        stopScreenShare,
-        isScreenSharing,
-        canScreenShare,
         flipCamera,
         facingMode,
         hasMultipleCameras,
@@ -372,12 +368,7 @@ const CallRoom: React.FC = () => {
             /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
         );
     };
-    const isMobileBrowser = () => {
-        if (typeof window === 'undefined') return false;
-        return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-    };
-    const shouldMirrorLocalVideo = facingMode === 'user' && !isScreenSharing;
-    const showScreenShareControl = canScreenShare && !isMobileBrowser();
+    const shouldMirrorLocalVideo = facingMode === 'user';
 
     const exitFullscreenIfActive = () => {
         const doc = document as Document & {
@@ -800,7 +791,6 @@ const CallRoom: React.FC = () => {
                     playsInline
                     muted
                     className={`video-local ${shouldMirrorLocalVideo ? 'mirrored' : ''}`}
-                    style={{ objectFit: isScreenSharing ? 'contain' : 'cover' }}
                 />
             </div>
 
@@ -812,24 +802,8 @@ const CallRoom: React.FC = () => {
                     handleControlsInteraction();
                 }}
             >
-                {showScreenShareControl && (
-                    <button
-                        onClick={() => {
-                            if (isScreenSharing) {
-                                void stopScreenShare();
-                            } else {
-                                void startScreenShare();
-                            }
-                        }}
-                        className={`btn-control ${isScreenSharing ? 'active-screen-share' : ''}`}
-                        title={isScreenSharing ? t('screen_share_stop') : t('screen_share_start')}
-                        aria-label={isScreenSharing ? t('screen_share_stop') : t('screen_share_start')}
-                    >
-                        {isScreenSharing ? <ScreenShareOff /> : <ScreenShare />}
-                    </button>
-                )}
                 {hasMultipleCameras && (
-                    <button onClick={flipCamera} className="btn-control" disabled={isScreenSharing}>
+                    <button onClick={flipCamera} className="btn-control">
                         <RotateCcw />
                     </button>
                 )}
