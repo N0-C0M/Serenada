@@ -99,8 +99,7 @@ val renameDebugApk = tasks.register("renameDebugApk") {
         val apk = layout.buildDirectory.file("outputs/apk/debug/app-debug.apk").get().asFile
         if (apk.exists()) {
             val target = File(apk.parentFile, "serenada-debug.apk")
-            target.delete()
-            apk.renameTo(target)
+            apk.copyTo(target, overwrite = true)
         }
     }
 }
@@ -110,8 +109,7 @@ val renameReleaseApk = tasks.register("renameReleaseApk") {
         val apk = layout.buildDirectory.file("outputs/apk/release/app-release.apk").get().asFile
         if (apk.exists()) {
             val target = File(apk.parentFile, "serenada.apk")
-            target.delete()
-            apk.renameTo(target)
+            apk.copyTo(target, overwrite = true)
         }
     }
 }
