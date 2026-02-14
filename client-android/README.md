@@ -39,6 +39,23 @@ cd client-android
 ./gradlew :app:assembleDebug
 ```
 
+WebRTC provider A/B build (for performance comparison):
+```bash
+cd client-android
+./gradlew :app:assembleDebug -PwebrtcProvider=local7559 # default (app/libs/libwebrtc-7559_173-arm64.aar)
+./gradlew :app:assembleDebug -PwebrtcProvider=stream    # alternative
+./gradlew :app:assembleDebug -PwebrtcProvider=dafruits  # legacy default
+./gradlew :app:assembleDebug -PwebrtcProvider=webrtcsdk # Chromium-closer branch build
+```
+
+Rebuild the local WebRTC AAR on a Linux VPS:
+```bash
+cd /path/to/connected
+bash tools/build_libwebrtc_android_7559.sh
+```
+The script outputs:
+`/opt/webrtc-build/artifacts/libwebrtc-7559_173-arm64-curlroots.aar`
+
 Release APK (signed):
 ```bash
 cd client-android
@@ -152,6 +169,10 @@ On Save, the app validates `https://<host>/api/room-id` and only persists hosts 
 - Connectivity checks (`/api/room-id`, WebSocket `/ws`, `/api/diagnostic-token`, `/api/turn-credentials`)
 - ICE tests for full STUN/TURN and TURNS-only modes
 - Title-bar share action that copies the full diagnostic report to clipboard and opens Android share sheet
+
+During active call flows, WebRTC runtime stats are emitted to logcat every ~2s as:
+- `CallManager: [WebRTCStats] ...`
+- Debug builds also enable native WebRTC verbose logging (tag `org.webrtc`/`libjingle`) for ICE/TURN investigation.
 
 ## Known limitations
 - WebSocket signaling only

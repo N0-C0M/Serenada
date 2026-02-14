@@ -16,8 +16,10 @@ import android.os.Looper
 import android.util.Range
 import android.util.DisplayMetrics
 import android.util.Log
+import app.serenada.android.BuildConfig
 import java.util.Collections
 import java.util.WeakHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
@@ -35,7 +37,10 @@ import org.webrtc.MediaConstraints
 import org.webrtc.MediaStreamTrack
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
+import org.webrtc.Logging
 import org.webrtc.RendererCommon
+import org.webrtc.RTCStats
+import org.webrtc.RTCStatsReport
 import org.webrtc.RtpParameters
 import org.webrtc.RtpTransceiver
 import org.webrtc.ScreenCapturerAndroid
@@ -131,6 +136,9 @@ class WebRtcEngine(
     private var remoteDescriptionSet = false
     private val pendingIceCandidates = mutableListOf<IceCandidate>()
     private var iceCandidateCount = 0
+    private var lastStatsTimestampMs: Double? = null
+    private var lastOutboundVideoBytes: Long? = null
+    private var lastInboundVideoBytes: Long? = null
     private val initializedRenderers =
         Collections.newSetFromMap(WeakHashMap<SurfaceViewRenderer, Boolean>())
 
@@ -139,13 +147,30 @@ class WebRtcEngine(
             .setEnableInternalTracer(false)
             .createInitializationOptions()
         PeerConnectionFactory.initialize(initOptions)
+        enableVerboseWebRtcLoggingIfDebug()
+        Log.i("WebRtcEngine", "Using WebRTC provider: ${BuildConfig.WEBRTC_PROVIDER}")
 
-        val encoderFactory = DefaultVideoEncoderFactory(eglBase.eglBaseContext, true, true)
+        // Keep VP8 hardware support enabled, but disable H264 high profile to reduce encode latency
+        // regressions seen on some Android devices with constrained hardware encoders.
+        val encoderFactory = DefaultVideoEncoderFactory(eglBase.eglBaseContext, true, false)
         val decoderFactory = DefaultVideoDecoderFactory(eglBase.eglBaseContext)
         peerConnectionFactory = PeerConnectionFactory.builder()
             .setVideoEncoderFactory(encoderFactory)
             .setVideoDecoderFactory(decoderFactory)
             .createPeerConnectionFactory()
+    }
+
+    private fun enableVerboseWebRtcLoggingIfDebug() {
+        if (!BuildConfig.DEBUG) return
+        if (!WEBRTC_LOGGING_ENABLED.compareAndSet(false, true)) return
+        runCatching {
+            Logging.enableLogThreads()
+            Logging.enableLogTimeStamps()
+            Logging.enableLogToDebugOutput(Logging.Severity.LS_VERBOSE)
+            Log.i("WebRtcEngine", "Verbose native WebRTC logging enabled")
+        }.onFailure { error ->
+            Log.w("WebRtcEngine", "Failed to enable WebRTC verbose logging", error)
+        }
     }
 
     fun getEglContext(): EglBase.Context = eglBase.eglBaseContext
@@ -211,6 +236,9 @@ class WebRtcEngine(
         remoteDescriptionSet = false
         pendingIceCandidates.clear()
         iceCandidateCount = 0
+        lastStatsTimestampMs = null
+        lastOutboundVideoBytes = null
+        lastInboundVideoBytes = null
         onRemoteVideoTrack(null)
     }
 
@@ -491,6 +519,17 @@ class WebRtcEngine(
             trackPresent = track != null,
             trackEnabled = track?.enabled() == true
         )
+    }
+
+    fun collectWebRtcStatsSummary(onComplete: (String) -> Unit) {
+        val pc = peerConnection
+        if (pc == null) {
+            onComplete("pc=none")
+            return
+        }
+        pc.getStats { report ->
+            onComplete(buildWebRtcStatsSummary(report))
+        }
     }
 
     fun attachLocalRenderer(
@@ -1439,7 +1478,159 @@ class WebRtcEngine(
         }
     }
 
+    @Synchronized
+    private fun buildWebRtcStatsSummary(report: RTCStatsReport): String {
+        val stats = report.statsMap.values
+        val statsById = report.statsMap
+
+        val selectedPair = stats.firstOrNull { stat ->
+            stat.type == "candidate-pair" && memberBoolean(stat, "selected") == true
+        } ?: stats.firstOrNull { stat ->
+            stat.type == "candidate-pair" &&
+                memberBoolean(stat, "nominated") == true &&
+                memberString(stat, "state") == "succeeded"
+        } ?: stats.firstOrNull { stat ->
+            stat.type == "candidate-pair" && memberString(stat, "state") == "succeeded"
+        }
+
+        val outboundVideo = stats
+            .filter { it.type == "outbound-rtp" && isVideoRtpStat(it) }
+            .maxByOrNull { memberLong(it, "bytesSent") ?: -1L }
+        val inboundVideo = stats
+            .filter { it.type == "inbound-rtp" && isVideoRtpStat(it) }
+            .maxByOrNull { memberLong(it, "bytesReceived") ?: -1L }
+        val remoteInboundVideo = stats
+            .filter { it.type == "remote-inbound-rtp" && isVideoRtpStat(it) }
+            .maxByOrNull { memberLong(it, "packetsReceived") ?: -1L }
+
+        val reportTimestampMs = report.timestampUs / 1000.0
+        val outboundBytes = memberLong(outboundVideo, "bytesSent")
+        val inboundBytes = memberLong(inboundVideo, "bytesReceived")
+
+        var measuredOutKbps: Double? = null
+        var measuredInKbps: Double? = null
+        val previousTimestampMs = lastStatsTimestampMs
+        if (previousTimestampMs != null && reportTimestampMs > previousTimestampMs) {
+            val deltaSeconds = (reportTimestampMs - previousTimestampMs) / 1000.0
+            if (deltaSeconds > 0.0) {
+                val previousOutBytes = lastOutboundVideoBytes
+                if (previousOutBytes != null && outboundBytes != null && outboundBytes >= previousOutBytes) {
+                    measuredOutKbps = ((outboundBytes - previousOutBytes) * 8.0 / deltaSeconds) / 1000.0
+                }
+                val previousInBytes = lastInboundVideoBytes
+                if (previousInBytes != null && inboundBytes != null && inboundBytes >= previousInBytes) {
+                    measuredInKbps = ((inboundBytes - previousInBytes) * 8.0 / deltaSeconds) / 1000.0
+                }
+            }
+        }
+        lastStatsTimestampMs = reportTimestampMs
+        lastOutboundVideoBytes = outboundBytes
+        lastInboundVideoBytes = inboundBytes
+
+        val pairRttMs = memberDouble(selectedPair, "currentRoundTripTime")?.times(1000.0)
+            ?: memberDouble(remoteInboundVideo, "roundTripTime")?.times(1000.0)
+        val pairOutKbps = memberDouble(selectedPair, "availableOutgoingBitrate")?.div(1000.0)
+        val pairInKbps = memberDouble(selectedPair, "availableIncomingBitrate")?.div(1000.0)
+        val outboundKbps = measuredOutKbps ?: pairOutKbps
+        val inboundKbps = measuredInKbps ?: pairInKbps
+
+        val inboundJitterMs = memberDouble(inboundVideo, "jitter")?.times(1000.0)
+        val outboundFps = memberDouble(outboundVideo, "framesPerSecond")
+        val inboundFps = memberDouble(inboundVideo, "framesPerSecond")
+        val framesEncoded = memberLong(outboundVideo, "framesEncoded")
+        val framesDecoded = memberLong(inboundVideo, "framesDecoded")
+        val framesDropped = memberLong(inboundVideo, "framesDropped")
+        val packetsLost = memberLong(inboundVideo, "packetsLost")
+        val qualityLimitationReason = memberString(outboundVideo, "qualityLimitationReason")
+        val outCodec = resolveCodecName(outboundVideo, statsById)
+        val inCodec = resolveCodecName(inboundVideo, statsById)
+
+        return buildString {
+            append("conn=")
+            append(peerConnection?.connectionState()?.name ?: "NA")
+            append(",ice=")
+            append(peerConnection?.iceConnectionState()?.name ?: "NA")
+            append(",rttMs=")
+            append(formatNumber(pairRttMs, 0))
+            append(",outKbps=")
+            append(formatNumber(outboundKbps, 1))
+            append(",inKbps=")
+            append(formatNumber(inboundKbps, 1))
+            append(",outFps=")
+            append(formatNumber(outboundFps, 1))
+            append(",inFps=")
+            append(formatNumber(inboundFps, 1))
+            append(",encFrames=")
+            append(framesEncoded ?: "n/a")
+            append(",decFrames=")
+            append(framesDecoded ?: "n/a")
+            append(",dropFrames=")
+            append(framesDropped ?: "n/a")
+            append(",lostPkts=")
+            append(packetsLost ?: "n/a")
+            append(",jitterMs=")
+            append(formatNumber(inboundJitterMs, 1))
+            append(",outCodec=")
+            append(outCodec ?: "n/a")
+            append(",inCodec=")
+            append(inCodec ?: "n/a")
+            append(",qualityLimit=")
+            append(qualityLimitationReason ?: "n/a")
+        }
+    }
+
+    private fun isVideoRtpStat(stat: RTCStats): Boolean {
+        val mediaType = memberString(stat, "kind") ?: memberString(stat, "mediaType")
+        return mediaType == "video"
+    }
+
+    private fun resolveCodecName(rtpStat: RTCStats?, statsById: Map<String, RTCStats>): String? {
+        val codecId = memberString(rtpStat, "codecId") ?: return null
+        val codecStat = statsById[codecId] ?: return null
+        val mimeType = memberString(codecStat, "mimeType") ?: return null
+        return mimeType.removePrefix("video/")
+    }
+
+    private fun memberString(stat: RTCStats?, key: String): String? {
+        val value = stat?.members?.get(key) ?: return null
+        return value.toString().ifBlank { null }
+    }
+
+    private fun memberDouble(stat: RTCStats?, key: String): Double? {
+        val value = stat?.members?.get(key) ?: return null
+        return when (value) {
+            is Number -> value.toDouble()
+            is String -> value.toDoubleOrNull()
+            else -> null
+        }
+    }
+
+    private fun memberLong(stat: RTCStats?, key: String): Long? {
+        val value = stat?.members?.get(key) ?: return null
+        return when (value) {
+            is Number -> value.toLong()
+            is String -> value.toLongOrNull()
+            else -> null
+        }
+    }
+
+    private fun memberBoolean(stat: RTCStats?, key: String): Boolean? {
+        val value = stat?.members?.get(key) ?: return null
+        return when (value) {
+            is Boolean -> value
+            is String -> value.toBooleanStrictOrNull()
+            else -> null
+        }
+    }
+
+    private fun formatNumber(value: Double?, decimals: Int): String {
+        val current = value ?: return "n/a"
+        return "%.${decimals}f".format(java.util.Locale.US, current)
+    }
+
     private companion object {
+        val WEBRTC_LOGGING_ENABLED = AtomicBoolean(false)
+
         const val LEGACY_CAMERA_WIDTH = 640
         const val LEGACY_CAMERA_HEIGHT = 480
         const val LEGACY_CAMERA_FPS = 30

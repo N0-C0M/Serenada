@@ -58,6 +58,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import app.serenada.android.BuildConfig
 import app.serenada.android.R
 import app.serenada.android.network.ApiClient
 import app.serenada.android.network.TurnCredentials
@@ -83,6 +84,7 @@ import org.webrtc.CandidatePairChangeEvent
 import org.webrtc.DataChannel
 import org.webrtc.IceCandidate
 import org.webrtc.IceCandidateErrorEvent
+import org.webrtc.Logging
 import org.webrtc.MediaConstraints
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
@@ -772,6 +774,7 @@ private fun runIceGathering(
     log: (String) -> Unit
 ): Pair<CheckResult, CheckResult> {
     val appContext = context.applicationContext
+    enableVerboseWebRtcLoggingForDiagnostics()
     PeerConnectionFactory.initialize(
         PeerConnectionFactory.InitializationOptions.builder(appContext)
             .setEnableInternalTracer(false)
@@ -963,6 +966,21 @@ private fun runIceGathering(
         else -> CheckResult(CheckState.Fail, "No relay candidate")
     }
     return Pair(stunResult, turnResult)
+}
+
+private val diagnosticsWebRtcLoggingEnabled = AtomicBoolean(false)
+
+private fun enableVerboseWebRtcLoggingForDiagnostics() {
+    if (!BuildConfig.DEBUG) return
+    if (!diagnosticsWebRtcLoggingEnabled.compareAndSet(false, true)) return
+    runCatching {
+        Logging.enableLogThreads()
+        Logging.enableLogTimeStamps()
+        Logging.enableLogToDebugOutput(Logging.Severity.LS_VERBOSE)
+        Log.i("Diagnostics", "Verbose native WebRTC logging enabled")
+    }.onFailure { error ->
+        Log.w("Diagnostics", "Failed to enable WebRTC verbose logging", error)
+    }
 }
 
 private fun extractCandidateType(candidateSdp: String): String? {

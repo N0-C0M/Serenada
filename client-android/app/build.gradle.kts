@@ -6,6 +6,20 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val webrtcProvider = (findProperty("webrtcProvider") as String?)?.trim()?.lowercase()
+    ?.takeIf { it == "stream" || it == "dafruits" || it == "webrtcsdk" || it == "local7559" }
+    ?: "local7559"
+val webrtcDependency = when (webrtcProvider) {
+    "dafruits" -> "com.dafruits:webrtc:123.0.0"
+    "webrtcsdk" -> "io.github.webrtc-sdk:android:137.7151.05"
+    "stream" -> "io.getstream:stream-webrtc-android:1.3.10"
+    else -> null
+}
+val localWebRtcAarPath = "libs/libwebrtc-7559_173-arm64.aar"
+if (webrtcProvider == "local7559" && !file(localWebRtcAarPath).exists()) {
+    throw GradleException("Missing local WebRTC AAR at app/$localWebRtcAarPath")
+}
+
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("keystore/keystore.properties")
 val hasReleaseKeystore = keystorePropertiesFile.exists()
@@ -23,6 +37,7 @@ android {
         targetSdk = 34
         versionCode = 6
         versionName = "0.1.6"
+        buildConfigField("String", "WEBRTC_PROVIDER", "\"$webrtcProvider\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -56,6 +71,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     composeOptions {
@@ -119,7 +135,11 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.dafruits:webrtc:123.0.0")
+    if (webrtcProvider == "local7559") {
+        implementation(files(localWebRtcAarPath))
+    } else {
+        implementation(webrtcDependency!!)
+    }
     implementation("com.google.zxing:core:3.5.3")
 
     debugImplementation("androidx.compose.ui:ui-tooling")

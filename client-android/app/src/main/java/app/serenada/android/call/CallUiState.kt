@@ -17,6 +17,7 @@ data class CallUiState(
     val connectionState: String = "NEW",
     val signalingState: String = "STABLE",
     val activeTransport: String? = null,
+    val webrtcStatsSummary: String = "",
     val isFrontCamera: Boolean = true,
     val isScreenSharing: Boolean = false,
     val localCameraMode: LocalCameraMode = LocalCameraMode.SELFIE,

@@ -89,6 +89,8 @@ class CallManager(context: Context) {
     private var iceRestartRunnable: Runnable? = null
     private var offerTimeoutRunnable: Runnable? = null
     private var remoteVideoStatePollRunnable: Runnable? = null
+    private var webrtcStatsRequestInFlight = false
+    private var lastWebRtcStatsPollAtMs = 0L
     private val pendingMessages = ArrayDeque<SignalingMessage>()
 
     private val webRtcEngine = WebRtcEngine(
@@ -390,6 +392,7 @@ class CallManager(context: Context) {
                 localAudioEnabled = defaultAudio,
                 localVideoEnabled = defaultVideo,
                 localCameraMode = LocalCameraMode.SELFIE,
+                webrtcStatsSummary = "",
                 isFlashAvailable = false,
                 isFlashEnabled = false
             )
@@ -955,6 +958,7 @@ class CallManager(context: Context) {
         val runnable = object : Runnable {
             override fun run() {
                 refreshRemoteVideoEnabled()
+                pollWebRtcStats()
                 handler.postDelayed(this, 500)
             }
         }
@@ -965,6 +969,28 @@ class CallManager(context: Context) {
     private fun stopRemoteVideoStatePolling() {
         remoteVideoStatePollRunnable?.let { handler.removeCallbacks(it) }
         remoteVideoStatePollRunnable = null
+        webrtcStatsRequestInFlight = false
+        lastWebRtcStatsPollAtMs = 0L
+    }
+
+    private fun pollWebRtcStats() {
+        val phase = _uiState.value.phase
+        if (phase != CallPhase.InCall && phase != CallPhase.Waiting && phase != CallPhase.Joining) return
+        val now = System.currentTimeMillis()
+        if (webrtcStatsRequestInFlight) return
+        if (now - lastWebRtcStatsPollAtMs < WEBRTC_STATS_POLL_INTERVAL_MS) return
+
+        webrtcStatsRequestInFlight = true
+        webRtcEngine.collectWebRtcStatsSummary { summary ->
+            handler.post {
+                webrtcStatsRequestInFlight = false
+                lastWebRtcStatsPollAtMs = System.currentTimeMillis()
+                if (_uiState.value.webrtcStatsSummary != summary) {
+                    updateState(_uiState.value.copy(webrtcStatsSummary = summary))
+                }
+                Log.d("CallManager", "[WebRTCStats] $summary")
+            }
+        }
     }
 
     private fun isHost(): Boolean = clientId != null && clientId == hostCid
@@ -1064,5 +1090,9 @@ class CallManager(context: Context) {
         )
         callStartTimeMs = null
         refreshRecentCalls()
+    }
+
+    private companion object {
+        const val WEBRTC_STATS_POLL_INTERVAL_MS = 2000L
     }
 }
