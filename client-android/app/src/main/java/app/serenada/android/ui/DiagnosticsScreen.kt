@@ -45,11 +45,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -160,6 +162,8 @@ fun DiagnosticsScreen(
     var iceTurnsOnlyMode by remember { mutableStateOf(false) }
     var connectivityInProgress by remember { mutableStateOf(false) }
     var iceInProgress by remember { mutableStateOf(false) }
+    var iceLiveServersSummary by remember { mutableStateOf<String?>(null) }
+    val iceLiveLogs = remember { emptyList<String>().toMutableStateList() }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -352,12 +356,18 @@ fun DiagnosticsScreen(
                 )
                 LabeledTextRow(
                     label = stringResource(R.string.diagnostics_ice_servers),
-                    value = report?.iceServersSummary ?: stringResource(R.string.diagnostics_not_run)
+                    value = when {
+                        iceInProgress -> iceLiveServersSummary
+                            ?: report?.iceServersSummary
+                            ?: stringResource(R.string.diagnostics_not_run)
+                        else -> report?.iceServersSummary ?: stringResource(R.string.diagnostics_not_run)
+                    }
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 DiagnosticsLogBox(
                     lines = when {
-                        iceInProgress -> listOf(stringResource(R.string.diagnostics_running))
+                        iceInProgress && iceLiveLogs.isEmpty() -> listOf(stringResource(R.string.diagnostics_running))
+                        iceInProgress -> iceLiveLogs
                         report == null -> listOf(stringResource(R.string.diagnostics_ice_log_placeholder))
                         report.logs.isEmpty() -> listOf(stringResource(R.string.diagnostics_not_run))
                         else -> report.logs
@@ -372,8 +382,27 @@ fun DiagnosticsScreen(
                         onClick = {
                             iceTurnsOnlyMode = false
                             iceInProgress = true
+                            iceLiveServersSummary = null
+                            iceLiveLogs.clear()
                             scope.launch {
-                                iceReport = runIceCheck(context, host, turnsOnly = false)
+                                iceReport = runIceCheck(
+                                    context = context,
+                                    host = host,
+                                    turnsOnly = false,
+                                    onIceServersSummary = { summary ->
+                                        scope.launch {
+                                            iceLiveServersSummary = summary
+                                        }
+                                    },
+                                    onLogLine = { line ->
+                                        scope.launch {
+                                            iceLiveLogs.add(line)
+                                        }
+                                    }
+                                )
+                                iceLiveLogs.clear()
+                                iceLiveLogs.addAll(iceReport?.logs.orEmpty())
+                                iceLiveServersSummary = iceReport?.iceServersSummary
                                 iceInProgress = false
                             }
                         },
@@ -386,8 +415,27 @@ fun DiagnosticsScreen(
                         onClick = {
                             iceTurnsOnlyMode = true
                             iceInProgress = true
+                            iceLiveServersSummary = null
+                            iceLiveLogs.clear()
                             scope.launch {
-                                iceReport = runIceCheck(context, host, turnsOnly = true)
+                                iceReport = runIceCheck(
+                                    context = context,
+                                    host = host,
+                                    turnsOnly = true,
+                                    onIceServersSummary = { summary ->
+                                        scope.launch {
+                                            iceLiveServersSummary = summary
+                                        }
+                                    },
+                                    onLogLine = { line ->
+                                        scope.launch {
+                                            iceLiveLogs.add(line)
+                                        }
+                                    }
+                                )
+                                iceLiveLogs.clear()
+                                iceLiveLogs.addAll(iceReport?.logs.orEmpty())
+                                iceLiveServersSummary = iceReport?.iceServersSummary
                                 iceInProgress = false
                             }
                         },
@@ -404,6 +452,13 @@ fun DiagnosticsScreen(
 
 @Composable
 private fun DiagnosticsLogBox(lines: List<String>) {
+    val scrollState = rememberScrollState()
+    LaunchedEffect(lines.size) {
+        if (lines.isNotEmpty()) {
+            scrollState.animateScrollTo(scrollState.maxValue)
+        }
+    }
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -414,7 +469,7 @@ private fun DiagnosticsLogBox(lines: List<String>) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
                 .padding(10.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
@@ -680,7 +735,9 @@ private suspend fun checkWebSocket(client: OkHttpClient, host: String): CheckRes
 private suspend fun runIceCheck(
     context: Context,
     host: String,
-    turnsOnly: Boolean
+    turnsOnly: Boolean,
+    onIceServersSummary: (String) -> Unit = {},
+    onLogLine: (String) -> Unit = {}
 ): IceReport = withContext(Dispatchers.IO) {
     val okHttpClient = OkHttpClient.Builder()
         .callTimeout(12, TimeUnit.SECONDS)
@@ -691,13 +748,16 @@ private suspend fun runIceCheck(
     val logs = Collections.synchronizedList(mutableListOf<String>())
 
     fun log(msg: String) {
-        logs.add("[${System.currentTimeMillis() / 1000}] $msg")
+        val line = "[${System.currentTimeMillis() / 1000}] $msg"
+        logs.add(line)
+        onLogLine(line)
     }
     log("Starting ICE test (turnsOnly=$turnsOnly)...")
     log("Requesting diagnostic token...")
 
     val token = apiClient.awaitDiagnosticToken(host).getOrElse { error ->
         val message = error.message ?: "Diagnostic token failed"
+        onLogLine("Token error: $message")
         return@withContext IceReport(
             turnsOnly = turnsOnly,
             stun = CheckResult(CheckState.Fail, message),
@@ -710,6 +770,7 @@ private suspend fun runIceCheck(
 
     val creds = apiClient.awaitTurnCredentials(host, token).getOrElse { error ->
         val message = error.message ?: "TURN credentials failed"
+        onLogLine("TURN credentials error: $message")
         return@withContext IceReport(
             turnsOnly = turnsOnly,
             stun = CheckResult(CheckState.Fail, message),
@@ -731,6 +792,7 @@ private suspend fun runIceCheck(
         creds.uris
     }
     if (filteredUris.isEmpty()) {
+        onIceServersSummary("n/a")
         return@withContext IceReport(
             turnsOnly = turnsOnly,
             stun = if (turnsOnly) {
@@ -756,13 +818,15 @@ private suspend fun runIceCheck(
     if (turnsOnly) {
         log("Filtered for TURNS only: ${filteredUris.size}/${creds.uris.size} servers")
     }
-    log("ICE servers: ${filteredUris.joinToString()}")
+    val iceServersSummary = filteredUris.joinToString()
+    onIceServersSummary(iceServersSummary)
+    log("ICE servers: $iceServersSummary")
     val gather = runIceGathering(context, servers, turnsOnly, ::log)
     IceReport(
         turnsOnly = turnsOnly,
         stun = gather.first,
         turn = gather.second,
-        iceServersSummary = filteredUris.joinToString(),
+        iceServersSummary = iceServersSummary,
         logs = logs.toList()
     )
 }
