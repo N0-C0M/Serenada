@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -232,15 +233,20 @@ fun DiagnosticsScreen(
             }
 
             SectionCard(title = stringResource(R.string.diagnostics_permissions_title)) {
+                val allPermissionsGranted = permissions.all { (_, result) ->
+                    result.state == CheckState.Pass
+                }
                 permissions.forEach { (label, result) ->
                     StatusRow(label = label, result = result)
                 }
-                Spacer(modifier = Modifier.height(10.dp))
-                OutlinedButton(
-                    onClick = { permissionLauncher.launch(requiredPermissions.toTypedArray()) },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(stringResource(R.string.diagnostics_request_permissions))
+                if (!allPermissionsGranted) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = { permissionLauncher.launch(requiredPermissions.toTypedArray()) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(stringResource(R.string.diagnostics_request_permissions))
+                    }
                 }
             }
 
@@ -327,11 +333,20 @@ fun DiagnosticsScreen(
                     enabled = !connectivityInProgress && !iceInProgress,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    if (connectivityInProgress) {
-                        CircularProgressIndicator(modifier = Modifier.width(18.dp), strokeWidth = 2.dp)
-                        Spacer(modifier = Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(stringResource(R.string.diagnostics_run_connectivity))
+                        if (connectivityInProgress) {
+                            CircularProgressIndicator(
+                                modifier = Modifier
+                                    .align(Alignment.CenterStart)
+                                    .size(18.dp),
+                                strokeWidth = 2.dp
+                            )
+                        }
                     }
-                    Text(stringResource(R.string.diagnostics_run_connectivity))
                 }
             }
 
