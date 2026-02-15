@@ -46,13 +46,6 @@ class SettingsStore(context: Context) {
             prefs.edit().putString(KEY_LANGUAGE, normalizeLanguage(value)).apply()
         }
 
-
-    var isBackgroundModeEnabled: Boolean
-        get() = prefs.getBoolean(KEY_BACKGROUND_MODE, false)
-        set(value) {
-            prefs.edit().putBoolean(KEY_BACKGROUND_MODE, value).apply()
-        }
-
     var isDefaultCameraEnabled: Boolean
         get() = prefs.getBoolean(KEY_DEFAULT_CAMERA_ENABLED, true)
         set(value) {
@@ -88,14 +81,13 @@ class SettingsStore(context: Context) {
         private const val KEY_RECONNECT_CID = "reconnect_cid"
         private const val KEY_PUSH_ENDPOINT = "push_endpoint"
         private const val KEY_LANGUAGE = "language"
-        private const val KEY_BACKGROUND_MODE = "background_mode"
         private const val KEY_DEFAULT_CAMERA_ENABLED = "default_camera_enabled"
         private const val KEY_DEFAULT_MIC_ENABLED = "default_mic_enabled"
         private const val KEY_HD_VIDEO_EXPERIMENTAL_ENABLED = "hd_video_experimental_enabled"
 
         fun normalizeLanguage(value: String?): String =
             when (value) {
-                LANGUAGE_AUTO, LANGUAGE_EN, LANGUAGE_RU, LANGUAGE_ES, LANGUAGE_FR -> value ?: LANGUAGE_AUTO
+                LANGUAGE_AUTO, LANGUAGE_EN, LANGUAGE_RU, LANGUAGE_ES, LANGUAGE_FR -> value
                 else -> LANGUAGE_AUTO
             }
     }

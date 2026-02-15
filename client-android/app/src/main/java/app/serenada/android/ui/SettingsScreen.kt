@@ -65,7 +65,6 @@ import java.net.URL
 fun SettingsScreen(
     host: String,
     selectedLanguage: String,
-    isBackgroundModeEnabled: Boolean,
     isDefaultCameraEnabled: Boolean,
     isDefaultMicrophoneEnabled: Boolean,
     isHdVideoExperimentalEnabled: Boolean,
@@ -73,7 +72,6 @@ fun SettingsScreen(
     isSaving: Boolean,
     onHostChange: (String) -> Unit,
     onLanguageSelect: (String) -> Unit,
-    onBackgroundModeChange: (Boolean) -> Unit,
     onDefaultCameraChange: (Boolean) -> Unit,
     onDefaultMicrophoneChange: (Boolean) -> Unit,
     onHdVideoExperimentalChange: (Boolean) -> Unit,

@@ -3,6 +3,7 @@ package app.serenada.android.call
 import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.net.ConnectivityManager
@@ -65,9 +66,6 @@ class CallManager(context: Context) {
 
     private val _selectedLanguage = mutableStateOf(settingsStore.language)
     val selectedLanguage: State<String> = _selectedLanguage
-
-    private val _isBackgroundModeEnabled = mutableStateOf(settingsStore.isBackgroundModeEnabled)
-    val isBackgroundModeEnabled: State<Boolean> = _isBackgroundModeEnabled
 
     private val _isDefaultCameraEnabled = mutableStateOf(settingsStore.isDefaultCameraEnabled)
     val isDefaultCameraEnabled: State<Boolean> = _isDefaultCameraEnabled
@@ -319,11 +317,6 @@ class CallManager(context: Context) {
         settingsStore.language = normalized
         _selectedLanguage.value = normalized
         AppLocaleManager.applyLanguage(normalized)
-    }
-
-    fun updateBackgroundMode(enabled: Boolean) {
-        settingsStore.isBackgroundModeEnabled = enabled
-        _isBackgroundModeEnabled.value = enabled
     }
 
     fun updateDefaultCamera(enabled: Boolean) {
@@ -1154,13 +1147,13 @@ class CallManager(context: Context) {
         if (audioSessionActive) return
         audioSessionActive = true
         previousAudioMode = audioManager.mode
-        previousSpeakerphoneOn = audioManager.isSpeakerphoneOn
+        previousSpeakerphoneOn = isSpeakerphoneEnabled()
         previousMicrophoneMute = audioManager.isMicrophoneMute
         requestAudioFocus()
         runCatching {
             audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
             audioManager.isMicrophoneMute = false
-            audioManager.isSpeakerphoneOn = true
+            setSpeakerphoneEnabled(true)
         }.onSuccess {
             Log.d(
                 "CallManager",
@@ -1179,7 +1172,7 @@ class CallManager(context: Context) {
         audioSessionActive = false
         runCatching {
             audioManager.isMicrophoneMute = previousMicrophoneMute
-            audioManager.isSpeakerphoneOn = previousSpeakerphoneOn
+            setSpeakerphoneEnabled(previousSpeakerphoneOn)
             audioManager.mode = previousAudioMode
         }.onSuccess {
             Log.d("CallManager", "Audio session restored (mode=$previousAudioMode)")
@@ -1187,6 +1180,36 @@ class CallManager(context: Context) {
             Log.w("CallManager", "Failed to restore audio session", error)
         }
         abandonAudioFocus()
+    }
+
+    private fun isSpeakerphoneEnabled(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            audioManager.communicationDevice?.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.isSpeakerphoneOn
+        }
+    }
+
+    private fun setSpeakerphoneEnabled(enabled: Boolean) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (enabled) {
+                val speaker = audioManager.availableCommunicationDevices.firstOrNull {
+                    it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                }
+                if (speaker == null || !audioManager.setCommunicationDevice(speaker)) {
+                    Log.w("CallManager", "Failed to route audio to built-in speaker")
+                }
+            } else {
+                audioManager.clearCommunicationDevice()
+            }
+            return
+        }
+
+        @Suppress("DEPRECATION")
+        run {
+            audioManager.isSpeakerphoneOn = enabled
+        }
     }
 
     private fun requestAudioFocus() {

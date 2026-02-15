@@ -35,6 +35,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ScreenShare
+import androidx.compose.material.icons.automirrored.filled.StopScreenShare
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -531,7 +533,11 @@ fun CallScreen(
                                 screenShareLauncher.launch(mediaProjectionManager.createScreenCaptureIntent())
                             }
                         },
-                        icon = if (uiState.isScreenSharing) Icons.Default.StopScreenShare else Icons.Default.ScreenShare,
+                        icon = if (uiState.isScreenSharing) {
+                            Icons.AutoMirrored.Filled.StopScreenShare
+                        } else {
+                            Icons.AutoMirrored.Filled.ScreenShare
+                        },
                         backgroundColor = if (uiState.isScreenSharing) Color.Red else Color.White.copy(alpha = 0.2f)
                     )
 
