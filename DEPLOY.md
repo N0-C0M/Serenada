@@ -42,6 +42,13 @@ Edit `.env.production` and set the following required variables:
 - `FCM_SERVICE_ACCOUNT_FILE` or `FCM_SERVICE_ACCOUNT_JSON` *(optional, required for native Android push receive)*:
   - `FCM_SERVICE_ACCOUNT_FILE`: absolute path on VPS to Firebase service-account JSON
   - `FCM_SERVICE_ACCOUNT_JSON`: inline JSON string (alternative to file path)
+- `RATE_LIMIT_BYPASS_IPS` *(optional, test-only)*: Comma-separated exact IPs/CIDRs that bypass HTTP rate limits (e.g. `127.0.0.1,10.0.0.0/8`)
+- `ENABLE_INTERNAL_STATS` *(optional, default disabled)*: Set to `1` only for controlled load testing to expose `/api/internal/stats`
+- `INTERNAL_STATS_TOKEN` *(required when internal stats are enabled)*: Required as `X-Internal-Token` header on `/api/internal/stats`
+
+> [!WARNING]
+> Keep `ENABLE_INTERNAL_STATS` disabled in normal production operation.
+> Enable it only for short-lived controlled diagnostics/load tests.
 
 #### Configuration Templates
 Serenada uses templates to generate final configuration files during deployment. This ensures that domain names and IP addresses are consistently applied across all services.
@@ -103,12 +110,19 @@ Serenada expects Let's Encrypt certificates to be located at `/etc/letsencrypt/l
 ### 4. Deploying the Stack
 
 A convenience script is provided for deployment. It uses `envsubst` to process templates, builds the frontend, syncs files via `rsync`, and restarts services via SSH.
+A high-concurrency kernel tuning profile is also applied on the VPS and persisted at `/etc/sysctl.d/99-serenada-scale.conf`:
+- `net.ipv4.ip_local_port_range = 1024 65535`
+- `net.netfilter.nf_conntrack_max = 262144`
+- `net.core.somaxconn = 65535`
+- `net.ipv4.tcp_max_syn_backlog = 8192`
+- `net.core.netdev_max_backlog = 16384`
+- `net.ipv4.tcp_fin_timeout = 15`
 
 > [!WARNING]
 > **Manual Restarts**: If you need to restart services manually on the server, you **MUST** include both compose files.
 > Do NOT run `docker compose up -d`.
 > Run `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d` instead.
-> Omitting the production file will cause the app to revert to development defaults (bridge network) and break connectivity.
+> Omitting the production file will cause the app to revert to development defaults (wrong Nginx config, no TLS/cert mounts, and missing production overrides) and break connectivity.
 
 From the project root on your local machine:
 ```bash
