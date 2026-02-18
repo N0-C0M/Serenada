@@ -30,10 +30,14 @@ import org.webrtc.IceCandidate
 import org.webrtc.PeerConnection
 import org.webrtc.SessionDescription
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.Executors
 
 class CallManager(context: Context) {
     private val appContext = context.applicationContext
     private val handler = Handler(Looper.getMainLooper())
+    private val webRtcStatsExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "webrtc-stats")
+    }
     private val okHttpClient = OkHttpClient.Builder().build()
     private val apiClient = ApiClient(okHttpClient)
     private val settingsStore = SettingsStore(appContext)
@@ -1097,14 +1101,16 @@ class CallManager(context: Context) {
         if (now - lastWebRtcStatsPollAtMs < WEBRTC_STATS_POLL_INTERVAL_MS) return
 
         webrtcStatsRequestInFlight = true
-        webRtcEngine.collectWebRtcStatsSummary { summary ->
-            handler.post {
-                webrtcStatsRequestInFlight = false
-                lastWebRtcStatsPollAtMs = System.currentTimeMillis()
-                if (_uiState.value.webrtcStatsSummary != summary) {
-                    updateState(_uiState.value.copy(webrtcStatsSummary = summary))
+        webRtcStatsExecutor.execute {
+            webRtcEngine.collectWebRtcStatsSummary { summary ->
+                handler.post {
+                    webrtcStatsRequestInFlight = false
+                    lastWebRtcStatsPollAtMs = System.currentTimeMillis()
+                    if (_uiState.value.webrtcStatsSummary != summary) {
+                        updateState(_uiState.value.copy(webrtcStatsSummary = summary))
+                    }
+                    Log.d("CallManager", "[WebRTCStats] $summary")
                 }
-                Log.d("CallManager", "[WebRTCStats] $summary")
             }
         }
     }
