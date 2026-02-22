@@ -68,6 +68,7 @@ fun SettingsScreen(
     isDefaultCameraEnabled: Boolean,
     isDefaultMicrophoneEnabled: Boolean,
     isHdVideoExperimentalEnabled: Boolean,
+    areSavedRoomsShownFirst: Boolean,
     hostError: String?,
     isSaving: Boolean,
     onHostChange: (String) -> Unit,
@@ -75,6 +76,7 @@ fun SettingsScreen(
     onDefaultCameraChange: (Boolean) -> Unit,
     onDefaultMicrophoneChange: (Boolean) -> Unit,
     onHdVideoExperimentalChange: (Boolean) -> Unit,
+    onSavedRoomsShownFirstChange: (Boolean) -> Unit,
     onOpenDiagnostics: () -> Unit,
     onSave: () -> Unit,
     onCancel: () -> Unit
@@ -324,6 +326,18 @@ fun SettingsScreen(
                         subLabel = stringResource(R.string.settings_hd_video_experimental_info),
                         checked = isHdVideoExperimentalEnabled,
                         onCheckedChange = onHdVideoExperimentalChange
+                    )
+                }
+
+                SettingsSection(
+                    title = stringResource(R.string.settings_saved_rooms_title),
+                    subTitle = stringResource(R.string.settings_saved_rooms_help)
+                ) {
+                    SettingsSwitchRow(
+                        label = stringResource(R.string.settings_saved_rooms_show_first),
+                        subLabel = stringResource(R.string.settings_saved_rooms_show_first_info),
+                        checked = areSavedRoomsShownFirst,
+                        onCheckedChange = onSavedRoomsShownFirstChange
                     )
                 }
             }

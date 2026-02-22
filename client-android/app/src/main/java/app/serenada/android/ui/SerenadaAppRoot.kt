@@ -49,6 +49,8 @@ fun SerenadaAppRoot(
     val serverHost by callManager.serverHost
     val selectedLanguage by callManager.selectedLanguage
     val recentCalls by callManager.recentCalls
+    val savedRooms by callManager.savedRooms
+    val areSavedRoomsShownFirst by callManager.areSavedRoomsShownFirst
     val roomStatuses by callManager.roomStatuses
     val context = LocalContext.current
     val showActiveCallScreen =
@@ -261,9 +263,11 @@ fun SerenadaAppRoot(
                         isDefaultCameraEnabled = callManager.isDefaultCameraEnabled.value,
                         isDefaultMicrophoneEnabled = callManager.isDefaultMicrophoneEnabled.value,
                         isHdVideoExperimentalEnabled = callManager.isHdVideoExperimentalEnabled.value,
+                        areSavedRoomsShownFirst = areSavedRoomsShownFirst,
                         onDefaultCameraChange = { callManager.updateDefaultCamera(it) },
                         onDefaultMicrophoneChange = { callManager.updateDefaultMicrophone(it) },
                         onHdVideoExperimentalChange = { callManager.updateHdVideoExperimental(it) },
+                        onSavedRoomsShownFirstChange = { callManager.updateSavedRoomsShownFirst(it) },
                         onOpenDiagnostics = {
                             showDiagnostics = true
                         },
@@ -361,6 +365,8 @@ fun SerenadaAppRoot(
                         isBusy = uiState.phase == CallPhase.CreatingRoom || uiState.phase == CallPhase.Joining,
                         statusMessage = statusMessage,
                         recentCalls = recentCalls,
+                        savedRooms = savedRooms,
+                        areSavedRoomsShownFirst = areSavedRoomsShownFirst,
                         roomStatuses = roomStatuses,
                         onOpenJoinWithCode = { showJoinWithCode = true },
                         onOpenSettings = {
@@ -378,8 +384,24 @@ fun SerenadaAppRoot(
                             callManager.updateServerHost(hostInput)
                             runWithCallPermissions { callManager.joinRoom(roomId) }
                         },
+                        onJoinSavedRoom = { room ->
+                            runWithCallPermissions { callManager.joinSavedRoom(room) }
+                        },
                         onRemoveRecentCall = { roomId ->
                             callManager.removeRecentCall(roomId)
+                        },
+                        onSaveRoom = { roomId, name ->
+                            callManager.saveRoom(roomId, name)
+                        },
+                        onCreateSavedRoomInviteLink = { roomName, onResult ->
+                            callManager.createSavedRoomInviteLink(
+                                roomName = roomName,
+                                hostInput = hostInput,
+                                onResult = onResult
+                            )
+                        },
+                        onRemoveSavedRoom = { roomId ->
+                            callManager.removeSavedRoom(roomId)
                         }
                     )
                 }
