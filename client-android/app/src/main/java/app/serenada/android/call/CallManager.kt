@@ -651,7 +651,7 @@ class CallManager(context: Context) {
 
         startRemoteVideoStatePolling()
         prepareJoinSnapshotAndConnect(roomId, joinAttemptId)
-        CallService.start(appContext, roomId)
+        CallService.start(appContext, roomId, roomName = savedRoomNameForNotification(roomId))
     }
 
     fun leaveCall() {
@@ -714,7 +714,12 @@ class CallManager(context: Context) {
             Log.w("CallManager", "Failed to start screen sharing: roomId is missing")
             return
         }
-        CallService.start(appContext, roomId, includeMediaProjection = true)
+        CallService.start(
+            appContext,
+            roomId,
+            roomName = savedRoomNameForNotification(roomId),
+            includeMediaProjection = true
+        )
         startScreenShareWhenForegroundReady(intent, roomId, attemptsRemaining = 15)
     }
 
@@ -725,7 +730,7 @@ class CallManager(context: Context) {
             return
         }
         currentRoomId?.let { roomId ->
-            CallService.start(appContext, roomId)
+            CallService.start(appContext, roomId, roomName = savedRoomNameForNotification(roomId))
         }
         updateState(_uiState.value.copy(isScreenSharing = false))
         applyLocalVideoPreference()
@@ -738,7 +743,7 @@ class CallManager(context: Context) {
     ) {
         if (CallService.isMediaProjectionForegroundActive()) {
             if (!webRtcEngine.startScreenShare(intent)) {
-                CallService.start(appContext, roomId)
+                CallService.start(appContext, roomId, roomName = savedRoomNameForNotification(roomId))
                 Log.w("CallManager", "Failed to start screen sharing")
                 return
             }
@@ -747,7 +752,7 @@ class CallManager(context: Context) {
             return
         }
         if (attemptsRemaining <= 0) {
-            CallService.start(appContext, roomId)
+            CallService.start(appContext, roomId, roomName = savedRoomNameForNotification(roomId))
             Log.w("CallManager", "Failed to start screen sharing: media projection foreground type not ready")
             return
         }
@@ -1501,6 +1506,10 @@ class CallManager(context: Context) {
         val rooms = savedRoomStore.getSavedRooms()
         _savedRooms.value = rooms
         refreshWatchedRooms()
+    }
+
+    private fun savedRoomNameForNotification(roomId: String): String? {
+        return _savedRooms.value.firstOrNull { it.roomId == roomId }?.name
     }
 
     private fun shouldWatchSavedRoom(room: SavedRoom): Boolean {
