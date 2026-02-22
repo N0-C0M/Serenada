@@ -6,20 +6,20 @@ A simple, privacy-focused 1:1 video calling application built with WebRTC. No ac
 
 ## Features
 
-- **Instant calls** вЂ“ One tap to start, share a link to connect
-- **No accounts required** вЂ“ Just open and call
-- **Privacy-first** вЂ“ No tracking, no analytics, end-to-end encrypted peer-to-peer video
-- **Resilient signaling** вЂ“ WebSocket with SSE fallback when WS is blocked
-- **Mobile-friendly** вЂ“ Works on Android Chrome, iOS Safari, and desktop browsers
-- **Desktop screen sharing (web)** вЂ“ In-call screen share control on desktop browsers that support `getDisplayMedia` (not shown on mobile browsers)
-- **Recent calls on home** вЂ“ Web and Android home screens show your latest calls with live room occupancy (Android supports long-press remove)
-- **Android saved rooms** вЂ“ Name and pin rooms on home, choose whether they appear above or below recent calls, and create links that add named rooms on recipient devices
-- **Android camera source cycle** вЂ“ In-call source switch cycles through `selfie` (default) -> `world` -> `composite` (world feed with circular selfie overlay), automatically skips `composite` when unsupported, and shows a flashlight toggle in `world`/`composite` when flash hardware is available; flashlight preference is remembered during the call and reapplied when returning to supported modes
-- **Android world/composite pinch zoom** вЂ“ When local video is the large in-call view in `world` or `composite`, pinch gesture zooms the camera capture itself so both local preview and the remote participant see the zoomed detail
-- **Android HD video toggle (experimental)** вЂ“ Settings include an `HD Video (experimental)` switch for higher camera/composite quality; default mode keeps legacy `640x480` camera constraints for stability
-- **Self-hostable** вЂ“ Run your own instance with full control
-- **Optional join alerts** вЂ“ Encrypted push notifications with snapshot previews (web + native Android)
-- **Room invite push** вЂ“ In waiting state you can explicitly invite subscribers of the room; Android shows these only for saved rooms and has a Settings toggle to disable invite notifications
+- **Instant calls** – One tap to start, share a link to connect
+- **No accounts required** – Just open and call
+- **Privacy-first** – No tracking, no analytics, end-to-end encrypted peer-to-peer video
+- **Resilient signaling** – WebSocket with SSE fallback when WS is blocked
+- **Mobile-friendly** – Works on Android Chrome, iOS Safari, and desktop browsers
+- **Desktop screen sharing (web)** – In-call screen share control on desktop browsers that support `getDisplayMedia` (not shown on mobile browsers)
+- **Recent calls on home** – Web and Android home screens show your latest calls with live room occupancy (Android supports long-press remove)
+- **Android saved rooms** – Name and pin rooms on home, choose whether they appear above or below recent calls, and create links that add named rooms on recipient devices
+- **Android camera source cycle** – In-call source switch cycles through `selfie` (default) -> `world` -> `composite` (world feed with circular selfie overlay), automatically skips `composite` when unsupported, and shows a flashlight toggle in `world`/`composite` when flash hardware is available; flashlight preference is remembered during the call and reapplied when returning to supported modes
+- **Android world/composite pinch zoom** – When local video is the large in-call view in `world` or `composite`, pinch gesture zooms the camera capture itself so both local preview and the remote participant see the zoomed detail
+- **Android HD video toggle (experimental)** – Settings include an `HD Video (experimental)` switch for higher camera/composite quality; default mode keeps legacy `640x480` camera constraints for stability
+- **Self-hostable** – Run your own instance with full control
+- **Optional join alerts** – Encrypted push notifications with snapshot previews (web + native Android)
+- **Room invite push** – In waiting state you can explicitly invite subscribers of the room; Android shows these only for saved rooms and has a Settings toggle to disable invite notifications
 
 ## Quick Start
 
@@ -73,7 +73,7 @@ The native Android app lives in `client-android/`.
 6. When updating that AAR, regenerate `client-android/app/libs/libwebrtc-7559_173-arm64.aar.sha256` (Gradle now verifies it before build).
 
 By default the app targets `https://serenada.app`, and the server host can be changed in Settings.
-The Android app language can also be set in Settings: `Auto (default)`, `English`, `Р СѓСЃСЃРєРёР№`, `EspaГ±ol`, `FranГ§ais`. `Auto` follows the device language and falls back to English.
+The Android app language can also be set in Settings: `Auto (default)`, `English`, `Русский`, `Español`, `Français`. `Auto` follows the device language and falls back to English.
 To enable native Android push receive, provide Firebase Gradle properties when building the app (`firebaseAppId`, `firebaseApiKey`, `firebaseProjectId`, `firebaseSenderId`).
 ### Production Deployment
 
@@ -128,21 +128,21 @@ Detailed request/timing sequence:
 ## Architecture
 
 ```
-в”Њв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”ђ         в”Њв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”ђ
-в”‚   Browser A     в”‚в—„в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв–єв”‚   Browser B     в”‚
-в”‚  (React SPA)    в”‚  WebRTC в”‚  (React SPA)    в”‚
-в””в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”¬в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”         в””в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”¬в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”
-         в”‚                           в”‚
-         в”‚ WS/SSE (signaling)        в”‚
-         в–ј                           в–ј
-в”Њв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”ђ
-в”‚              Go Signaling Server            в”‚
-в””в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”
-                      в”‚
-                      в–ј
-в”Њв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”ђ
-в”‚            STUN/TURN Server (Coturn)        в”‚
-в””в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”
++-----------------+         +-----------------+
+|   Browser A     |<------->|   Browser B     |
+|  (React SPA)    |  WebRTC |  (React SPA)    |
++--------+--------+         +--------+--------+
+         |                           |
+         | WS/SSE (signaling)        |
+         v                           v
++---------------------------------------------+
+|              Go Signaling Server            |
++---------------------------------------------+
+                      |
+                      v
++---------------------------------------------+
+|            STUN/TURN Server (Coturn)        |
++---------------------------------------------+
 ```
 
 - **Frontend**: React + TypeScript + Vite
@@ -152,12 +152,12 @@ Detailed request/timing sequence:
 
 ## Documentation
 
-- [Deployment Guide](DEPLOY.md) вЂ“ Self-hosting instructions
-- [Protocol Specification](serenada_protocol_v1.md) вЂ“ Signaling protocol (WebSocket + SSE)
-- [Push Notifications](push-notifications.md) вЂ“ Encrypted snapshot notifications
-- [Android Client README](client-android/README.md) вЂ“ Kotlin native app setup and build notes
-- `server/loadtest/run-local.sh` вЂ“ Local signaling load sweep runner
-- [`server/loadtest/LOAD_SIMULATION_SEQUENCE.md`](server/loadtest/LOAD_SIMULATION_SEQUENCE.md) вЂ“ Detailed load-conduit HTTP/WS call sequence and timing
+- [Deployment Guide](DEPLOY.md) – Self-hosting instructions
+- [Protocol Specification](serenada_protocol_v1.md) – Signaling protocol (WebSocket + SSE)
+- [Push Notifications](push-notifications.md) – Encrypted snapshot notifications
+- [Android Client README](client-android/README.md) – Kotlin native app setup and build notes
+- `server/loadtest/run-local.sh` – Local signaling load sweep runner
+- [`server/loadtest/LOAD_SIMULATION_SEQUENCE.md`](server/loadtest/LOAD_SIMULATION_SEQUENCE.md) – Detailed load-conduit HTTP/WS call sequence and timing
 
 ## Technology
 
@@ -172,6 +172,7 @@ Detailed request/timing sequence:
 ## License
 
 This project is licensed under the BSD 3-Clause License. See [LICENSE](LICENSE) for details.
+
 
 
 
