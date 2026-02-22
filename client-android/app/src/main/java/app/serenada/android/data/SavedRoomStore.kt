@@ -92,6 +92,11 @@ class SavedRoomStore(context: Context) {
         return true
     }
 
+    fun hasRoom(roomId: String): Boolean {
+        if (roomId.isBlank()) return false
+        return getSavedRooms().any { it.roomId == roomId }
+    }
+
     private fun persist(rooms: List<SavedRoom>) {
         val json = JSONArray()
         rooms.forEach { room ->

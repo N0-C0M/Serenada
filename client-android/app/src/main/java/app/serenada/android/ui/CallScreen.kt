@@ -91,6 +91,7 @@ fun CallScreen(
     onToggleFlashlight: () -> Unit,
     onLocalPinchZoom: (Float) -> Unit,
     onEndCall: () -> Unit,
+    onInviteToRoom: () -> Unit,
     // Added callbacks for Screen Share
     onStartScreenShare: (Intent) -> Unit = {},
     onStopScreenShare: () -> Unit = {},
@@ -431,7 +432,11 @@ fun CallScreen(
 
         // Waiting State Overlay
         if (uiState.phase == CallPhase.Waiting && !isLocalLarge) {
-            WaitingOverlay(roomId = roomId, serverHost = serverHost)
+            WaitingOverlay(
+                roomId = roomId,
+                serverHost = serverHost,
+                onInviteToRoom = onInviteToRoom
+            )
         }
 
         // Reconnecting Indicator
@@ -635,7 +640,7 @@ private fun ControlButton(
 }
 
 @Composable
-private fun WaitingOverlay(roomId: String, serverHost: String) {
+private fun WaitingOverlay(roomId: String, serverHost: String, onInviteToRoom: () -> Unit) {
     val link = "https://$serverHost/call/$roomId"
     val qrBitmap = remember(link) { generateQrCode(link) }
     val context = LocalContext.current
@@ -682,6 +687,21 @@ private fun WaitingOverlay(roomId: String, serverHost: String) {
             Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(modifier = Modifier.width(8.dp))
             Text(stringResource(R.string.call_share_invitation))
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Button(
+            onClick = onInviteToRoom,
+            colors =
+                ButtonDefaults.buttonColors(
+                    containerColor = Color.White.copy(alpha = 0.2f)
+                ),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Icon(Icons.Default.NotificationsActive, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(stringResource(R.string.call_invite_to_room))
         }
     }
 }

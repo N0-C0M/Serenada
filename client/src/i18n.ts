@@ -52,7 +52,10 @@ const resources = {
             "notify_me_on": "Notify Me (On)",
             "screen_share_start": "Share Screen",
             "screen_share_stop": "Stop Sharing",
-            "toast_screen_share_error": "Could not start screen sharing."
+            "toast_screen_share_error": "Could not start screen sharing.",
+            "invite_to_call": "Invite to call",
+            "toast_invite_sent": "Invite sent",
+            "toast_invite_failed": "Failed to send invite."
         }
     },
     ru: {
@@ -104,7 +107,10 @@ const resources = {
             "notify_me_on": "Уведомления включены",
             "screen_share_start": "Поделиться экраном",
             "screen_share_stop": "Остановить показ",
-            "toast_screen_share_error": "Не удалось начать демонстрацию экрана."
+            "toast_screen_share_error": "Не удалось начать демонстрацию экрана.",
+            "invite_to_call": "Позвать в звонок",
+            "toast_invite_sent": "Приглашение отправлено",
+            "toast_invite_failed": "Не удалось отправить приглашение."
         }
     },
     es: {
@@ -156,7 +162,10 @@ const resources = {
             "notify_me_on": "Notificaciones activadas",
             "screen_share_start": "Compartir pantalla",
             "screen_share_stop": "Detener uso compartido",
-            "toast_screen_share_error": "No se pudo iniciar el uso compartido de pantalla."
+            "toast_screen_share_error": "No se pudo iniciar el uso compartido de pantalla.",
+            "invite_to_call": "Invitar a la llamada",
+            "toast_invite_sent": "Invitación enviada",
+            "toast_invite_failed": "No se pudo enviar la invitación."
         }
     },
     fr: {
@@ -208,7 +217,10 @@ const resources = {
             "notify_me_on": "Notifications activées",
             "screen_share_start": "Partager l'écran",
             "screen_share_stop": "Arrêter le partage",
-            "toast_screen_share_error": "Impossible de démarrer le partage d'écran."
+            "toast_screen_share_error": "Impossible de démarrer le partage d'écran.",
+            "invite_to_call": "Inviter à l'appel",
+            "toast_invite_sent": "Invitation envoyée",
+            "toast_invite_failed": "Impossible d'envoyer l'invitation."
         }
     }
 };

@@ -51,6 +51,7 @@ fun SerenadaAppRoot(
     val recentCalls by callManager.recentCalls
     val savedRooms by callManager.savedRooms
     val areSavedRoomsShownFirst by callManager.areSavedRoomsShownFirst
+    val areRoomInviteNotificationsEnabled by callManager.areRoomInviteNotificationsEnabled
     val roomStatuses by callManager.roomStatuses
     val context = LocalContext.current
     val showActiveCallScreen =
@@ -264,10 +265,12 @@ fun SerenadaAppRoot(
                         isDefaultMicrophoneEnabled = callManager.isDefaultMicrophoneEnabled.value,
                         isHdVideoExperimentalEnabled = callManager.isHdVideoExperimentalEnabled.value,
                         areSavedRoomsShownFirst = areSavedRoomsShownFirst,
+                        areRoomInviteNotificationsEnabled = areRoomInviteNotificationsEnabled,
                         onDefaultCameraChange = { callManager.updateDefaultCamera(it) },
                         onDefaultMicrophoneChange = { callManager.updateDefaultMicrophone(it) },
                         onHdVideoExperimentalChange = { callManager.updateHdVideoExperimental(it) },
                         onSavedRoomsShownFirstChange = { callManager.updateSavedRoomsShownFirst(it) },
+                        onRoomInviteNotificationsChange = { callManager.updateRoomInviteNotifications(it) },
                         onOpenDiagnostics = {
                             showDiagnostics = true
                         },
@@ -339,6 +342,25 @@ fun SerenadaAppRoot(
                         onToggleFlashlight = { callManager.toggleFlashlight() },
                         onLocalPinchZoom = { scaleFactor -> callManager.adjustLocalCameraZoom(scaleFactor) },
                         onEndCall = { callManager.leaveCall() },
+                        onInviteToRoom = {
+                            callManager.inviteToCurrentRoom { result ->
+                                result
+                                    .onSuccess {
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            context.getString(R.string.call_invite_sent),
+                                            android.widget.Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                    .onFailure {
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            context.getString(R.string.call_invite_failed),
+                                            android.widget.Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                            }
+                        },
                         onStartScreenShare = { intent -> callManager.startScreenShare(intent) },
                         onStopScreenShare = { callManager.stopScreenShare() },
                         attachLocalRenderer = { renderer, events ->

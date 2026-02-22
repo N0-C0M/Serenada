@@ -70,6 +70,12 @@ class SettingsStore(context: Context) {
             prefs.edit().putBoolean(KEY_SAVED_ROOMS_SHOWN_FIRST, value).apply()
         }
 
+    var areRoomInviteNotificationsEnabled: Boolean
+        get() = prefs.getBoolean(KEY_ROOM_INVITE_NOTIFICATIONS_ENABLED, true)
+        set(value) {
+            prefs.edit().putBoolean(KEY_ROOM_INVITE_NOTIFICATIONS_ENABLED, value).apply()
+        }
+
 
     companion object {
         const val DEFAULT_HOST = "serenada.app"
@@ -91,6 +97,7 @@ class SettingsStore(context: Context) {
         private const val KEY_DEFAULT_MIC_ENABLED = "default_mic_enabled"
         private const val KEY_HD_VIDEO_EXPERIMENTAL_ENABLED = "hd_video_experimental_enabled"
         private const val KEY_SAVED_ROOMS_SHOWN_FIRST = "saved_rooms_shown_first"
+        private const val KEY_ROOM_INVITE_NOTIFICATIONS_ENABLED = "room_invite_notifications_enabled"
 
         fun normalizeLanguage(value: String?): String =
             when (value) {

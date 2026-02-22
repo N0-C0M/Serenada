@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useSignaling } from '../contexts/SignalingContext';
 import { useWebRTC } from '../contexts/WebRTCContext';
 import { useToast } from '../contexts/ToastContext';
-import { Mic, MicOff, Video, VideoOff, PhoneOff, Copy, AlertCircle, RotateCcw, Maximize2, Minimize2, CheckSquare, Square, ScreenShare, ScreenShareOff } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, PhoneOff, Copy, AlertCircle, RotateCcw, Maximize2, Minimize2, CheckSquare, Square, ScreenShare, ScreenShareOff, BellRing } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import { saveCall } from '../utils/callHistory';
 import { useTranslation } from 'react-i18next';
@@ -235,6 +235,7 @@ const CallRoom: React.FC = () => {
     const [isSubscribed, setIsSubscribed] = useState(false);
     const [pushSupported, setPushSupported] = useState(false);
     const [vapidKey, setVapidKey] = useState<string | null>(null);
+    const [isInviting, setIsInviting] = useState(false);
 
     useEffect(() => {
         if ('serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window) {
@@ -302,6 +303,36 @@ const CallRoom: React.FC = () => {
         } catch (err) {
             console.error(err);
             showToast('error', 'Failed to update subscription');
+        }
+    };
+
+    const handleInvite = async (e: React.MouseEvent | React.PointerEvent) => {
+        e.stopPropagation();
+        handleControlsInteraction();
+        if (!roomId || isInviting) return;
+
+        setIsInviting(true);
+        try {
+            let endpoint: string | undefined;
+            if ('serviceWorker' in navigator && 'PushManager' in window) {
+                const reg = await navigator.serviceWorker.ready;
+                const sub = await reg.pushManager.getSubscription();
+                endpoint = sub?.endpoint;
+            }
+            const res = await fetch(`/api/push/invite?roomId=${encodeURIComponent(roomId)}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(endpoint ? { endpoint } : {})
+            });
+            if (!res.ok) {
+                throw new Error(`Invite request failed: ${res.status}`);
+            }
+            showToast('success', t('toast_invite_sent'));
+        } catch (err) {
+            console.error('[Invite] Failed to send invite', err);
+            showToast('error', t('toast_invite_failed'));
+        } finally {
+            setIsInviting(false);
         }
     };
 
@@ -763,6 +794,19 @@ const CallRoom: React.FC = () => {
                                     }}
                                 >
                                     {t('copy_link_share')}
+                                </button>
+                                <button
+                                    className={`btn-small ${isInviting ? 'active' : ''}`}
+                                    onClick={handleInvite}
+                                    onPointerUp={event => {
+                                        event.stopPropagation();
+                                        handleControlsInteraction();
+                                    }}
+                                    disabled={isInviting}
+                                    style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                                >
+                                    <BellRing size={16} />
+                                    {t('invite_to_call')}
                                 </button>
 
                                 {pushSupported && (
