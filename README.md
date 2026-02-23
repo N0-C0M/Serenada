@@ -1,4 +1,4 @@
-﻿# Serenada
+# Serenada
 
 A simple, privacy-focused 1:1 video calling application built with WebRTC. No accounts, no tracking, just instant video calls.
 
@@ -172,11 +172,3 @@ Detailed request/timing sequence:
 ## License
 
 This project is licensed under the BSD 3-Clause License. See [LICENSE](LICENSE) for details.
-
-
-
-
-
-
-
-
