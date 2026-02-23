@@ -219,6 +219,7 @@ On Save, the app validates `https://<host>/api/room-id` and only persists hosts 
 `Call defaults` also include `HD Video (experimental)`; when disabled (default), camera capture uses legacy `640x480`, and when enabled the app applies higher per-mode camera/composite targets.
 `Saved rooms` settings include:
 - A switch to show saved rooms above or below recent calls on the home screen
+The app version is shown at the bottom of the Settings screen for quick support/debug reference.
 Named-room creation and sharing is available from the home screen (`Saved rooms` section → `+ Create`). It creates a room ID and shareable link that adds this room on recipient devices and preserves per-room host overrides for non-default hosts.
 `Device Check` in Settings opens a native diagnostics screen with:
 - Runtime permission checks (`CAMERA`, `RECORD_AUDIO`, `POST_NOTIFICATIONS` on Android 13+)
