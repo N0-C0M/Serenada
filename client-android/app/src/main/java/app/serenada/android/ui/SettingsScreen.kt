@@ -69,6 +69,7 @@ fun SettingsScreen(
     isDefaultMicrophoneEnabled: Boolean,
     isHdVideoExperimentalEnabled: Boolean,
     areSavedRoomsShownFirst: Boolean,
+    areRoomInviteNotificationsEnabled: Boolean,
     hostError: String?,
     isSaving: Boolean,
     onHostChange: (String) -> Unit,
@@ -77,6 +78,7 @@ fun SettingsScreen(
     onDefaultMicrophoneChange: (Boolean) -> Unit,
     onHdVideoExperimentalChange: (Boolean) -> Unit,
     onSavedRoomsShownFirstChange: (Boolean) -> Unit,
+    onRoomInviteNotificationsChange: (Boolean) -> Unit,
     onOpenDiagnostics: () -> Unit,
     onSave: () -> Unit,
     onCancel: () -> Unit
@@ -338,6 +340,17 @@ fun SettingsScreen(
                         subLabel = stringResource(R.string.settings_saved_rooms_show_first_info),
                         checked = areSavedRoomsShownFirst,
                         onCheckedChange = onSavedRoomsShownFirstChange
+                    )
+                }
+
+                SettingsSection(
+                    title = stringResource(R.string.settings_invites_title)
+                ) {
+                    SettingsSwitchRow(
+                        label = stringResource(R.string.settings_invite_notifications),
+                        subLabel = stringResource(R.string.settings_invite_notifications_info),
+                        checked = areRoomInviteNotificationsEnabled,
+                        onCheckedChange = onRoomInviteNotificationsChange
                     )
                 }
             }

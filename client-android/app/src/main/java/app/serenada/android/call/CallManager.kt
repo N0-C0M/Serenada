@@ -89,6 +89,10 @@ class CallManager(context: Context) {
     private val _areSavedRoomsShownFirst = mutableStateOf(settingsStore.areSavedRoomsShownFirst)
     val areSavedRoomsShownFirst: State<Boolean> = _areSavedRoomsShownFirst
 
+    private val _areRoomInviteNotificationsEnabled =
+        mutableStateOf(settingsStore.areRoomInviteNotificationsEnabled)
+    val areRoomInviteNotificationsEnabled: State<Boolean> = _areRoomInviteNotificationsEnabled
+
     private val _roomStatuses = mutableStateOf<Map<String, Int>>(emptyMap())
     val roomStatuses: State<Map<String, Int>> = _roomStatuses
 
@@ -319,6 +323,7 @@ class CallManager(context: Context) {
         _serverHost.value = trimmed
         if (changed && currentRoomId == null) {
             signalingClient.close()
+            syncSavedRoomPushSubscriptions(_savedRooms.value)
             refreshWatchedRooms()
         }
     }
@@ -359,6 +364,28 @@ class CallManager(context: Context) {
     fun updateSavedRoomsShownFirst(enabled: Boolean) {
         settingsStore.areSavedRoomsShownFirst = enabled
         _areSavedRoomsShownFirst.value = enabled
+    }
+
+    fun updateRoomInviteNotifications(enabled: Boolean) {
+        settingsStore.areRoomInviteNotificationsEnabled = enabled
+        _areRoomInviteNotificationsEnabled.value = enabled
+    }
+
+    fun inviteToCurrentRoom(onResult: (Result<Unit>) -> Unit) {
+        val roomId = currentRoomId?.trim().orEmpty()
+        if (roomId.isBlank()) {
+            handler.post {
+                onResult(Result.failure(IllegalStateException("No active room")))
+            }
+            return
+        }
+        val host = currentSignalingHost()
+        val endpoint = pushSubscriptionManager.cachedEndpoint()
+        apiClient.sendPushInvite(host, roomId, endpoint) { result ->
+            handler.post {
+                onResult(result)
+            }
+        }
     }
 
     fun saveRoom(roomId: String, name: String, host: String? = null) {
@@ -1509,7 +1536,17 @@ class CallManager(context: Context) {
     private fun refreshSavedRooms() {
         val rooms = savedRoomStore.getSavedRooms()
         _savedRooms.value = rooms
+        syncSavedRoomPushSubscriptions(rooms)
         refreshWatchedRooms()
+    }
+
+    private fun syncSavedRoomPushSubscriptions(rooms: List<SavedRoom>) {
+        val host = serverHost.value
+        rooms
+            .filter { shouldWatchSavedRoom(it) }
+            .forEach { room ->
+                pushSubscriptionManager.subscribeRoom(room.roomId, host)
+            }
     }
 
     private fun savedRoomNameForNotification(roomId: String): String? {

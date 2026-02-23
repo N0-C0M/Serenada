@@ -19,6 +19,7 @@ A simple, privacy-focused 1:1 video calling application built with WebRTC. No ac
 - **Android HD video toggle (experimental)** – Settings include an `HD Video (experimental)` switch for higher camera/composite quality; default mode keeps legacy `640x480` camera constraints for stability
 - **Self-hostable** – Run your own instance with full control
 - **Optional join alerts** – Encrypted push notifications with snapshot previews (web + native Android)
+- **Room invite push** – In waiting state you can explicitly invite subscribers of the room; Android shows these only for saved rooms and has a Settings toggle to disable invite notifications
 
 ## Quick Start
 
@@ -74,7 +75,6 @@ The native Android app lives in `client-android/`.
 By default the app targets `https://serenada.app`, and the server host can be changed in Settings.
 The Android app language can also be set in Settings: `Auto (default)`, `English`, `Русский`, `Español`, `Français`. `Auto` follows the device language and falls back to English.
 To enable native Android push receive, provide Firebase Gradle properties when building the app (`firebaseAppId`, `firebaseApiKey`, `firebaseProjectId`, `firebaseSenderId`).
-
 ### Production Deployment
 
 See [DEPLOY.md](DEPLOY.md) for detailed self-hosting instructions.

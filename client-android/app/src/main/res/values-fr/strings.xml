@@ -139,4 +139,11 @@
     <string name="settings_saved_rooms_share_link_chooser">Partager le lien de salle</string>
     <string name="common_copy">Copier</string>
     <string name="common_share">Partager</string>
+    <string name="call_invite_to_room">Inviter à l\'appel</string>
+    <string name="call_invite_sent">Invitation envoyée</string>
+    <string name="call_invite_failed">Échec de l\'envoi de l\'invitation</string>
+    <string name="push_notification_invite_body">Vous avez été invité dans une salle.</string>
+    <string name="settings_invites_title">Invitations</string>
+    <string name="settings_invite_notifications">Notifications d\'invitation</string>
+    <string name="settings_invite_notifications_info">Afficher les notifications quand vous êtes invité dans une salle enregistrée.</string>
 </resources>

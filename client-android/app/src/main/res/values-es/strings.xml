@@ -141,4 +141,11 @@
     <string name="settings_saved_rooms_share_link_chooser">Compartir enlace de sala</string>
     <string name="common_copy">Copiar</string>
     <string name="common_share">Compartir</string>
+    <string name="call_invite_to_room">Invitar a la llamada</string>
+    <string name="call_invite_sent">Invitación enviada</string>
+    <string name="call_invite_failed">No se pudo enviar la invitación</string>
+    <string name="push_notification_invite_body">Te invitaron a una sala.</string>
+    <string name="settings_invites_title">Invitaciones</string>
+    <string name="settings_invite_notifications">Notificaciones de invitación</string>
+    <string name="settings_invite_notifications_info">Mostrar notificaciones cuando te inviten a una sala guardada.</string>
 </resources>

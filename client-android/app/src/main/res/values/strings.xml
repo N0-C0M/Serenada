@@ -119,6 +119,9 @@
     <string name="call_waiting_overlay">Waiting for someone to join...</string>
     <string name="call_qr_code">QR code</string>
     <string name="call_share_invitation">Share invitation</string>
+    <string name="call_invite_to_room">Invite to call</string>
+    <string name="call_invite_sent">Invite sent</string>
+    <string name="call_invite_failed">Failed to send invite</string>
     <string name="call_share_link_chooser">Share call link</string>
 
     <string name="notification_call_title">Serenada call</string>
@@ -127,6 +130,7 @@
     <string name="notification_room">Room %1$s</string>
     <string name="notification_in_call">In call</string>
     <string name="push_notification_default_body">Someone joined your call!</string>
+    <string name="push_notification_invite_body">You were invited to a room.</string>
 
     <string name="custom">Custom</string>
     <string name="camera_enabled">Camera enabled</string>
@@ -137,6 +141,9 @@
     <string name="settings_saved_rooms_help">Keep named rooms on the home screen. Use + Create in Saved rooms to make a shareable room link.</string>
     <string name="settings_saved_rooms_show_first">Show saved rooms above recent calls</string>
     <string name="settings_saved_rooms_show_first_info">Turn off to place saved rooms below recent calls.</string>
+    <string name="settings_invites_title">Invites</string>
+    <string name="settings_invite_notifications">Invite notifications</string>
+    <string name="settings_invite_notifications_info">Show notifications when someone invites you to a saved room.</string>
     <string name="settings_saved_rooms_create_link">Create room link</string>
     <string name="settings_saved_rooms_share_link_chooser">Share room link</string>
     <string name="common_copy">Copy</string>
