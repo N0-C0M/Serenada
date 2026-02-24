@@ -662,6 +662,7 @@ class CallManager(context: Context) {
                 localVideoEnabled = defaultVideo,
                 localCameraMode = LocalCameraMode.SELFIE,
                 webrtcStatsSummary = "",
+                realtimeCallStats = null,
                 isFlashAvailable = false,
                 isFlashEnabled = false
             )
@@ -1359,12 +1360,18 @@ class CallManager(context: Context) {
 
         webrtcStatsRequestInFlight = true
         webRtcStatsExecutor.execute {
-            webRtcEngine.collectWebRtcStatsSummary { summary ->
+            webRtcEngine.collectWebRtcStats { summary, realtimeStats ->
                 handler.post {
                     webrtcStatsRequestInFlight = false
                     lastWebRtcStatsPollAtMs = System.currentTimeMillis()
-                    if (_uiState.value.webrtcStatsSummary != summary) {
-                        updateState(_uiState.value.copy(webrtcStatsSummary = summary))
+                    val state = _uiState.value
+                    if (state.webrtcStatsSummary != summary || state.realtimeCallStats != realtimeStats) {
+                        updateState(
+                            state.copy(
+                                webrtcStatsSummary = summary,
+                                realtimeCallStats = realtimeStats
+                            )
+                        )
                     }
                     Log.d("CallManager", "[WebRTCStats] $summary")
                 }
