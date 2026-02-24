@@ -1458,7 +1458,9 @@ class CallManager(context: Context) {
 
     private fun acquirePerformanceLocks() {
         acquireCpuWakeLock()
-        acquireWifiLock()
+        // Wi-Fi low-latency lock disabled: on some devices (notably Samsung with Qualcomm WiFi),
+        // WIFI_MODE_FULL_LOW_LATENCY triggers prolonged off-channel scans (~1.5s) instead of
+        // suppressing them, causing massive UDP packet jitter and ~1s+ audio playout delay.
     }
 
     private fun acquireCpuWakeLock() {
