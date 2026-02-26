@@ -10,7 +10,7 @@ struct QRCodeImageView: View {
                 .interpolation(.none)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 160, height: 160)
+                .frame(width: 136, height: 136)
                 .padding(8)
                 .background(Color.white)
                 .clipShape(RoundedRectangle(cornerRadius: 12))

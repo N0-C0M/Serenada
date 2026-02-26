@@ -411,10 +411,6 @@ struct CallScreen: View {
 
                 Spacer()
 
-                if shouldShowWaitingOverlay(phase: uiState.phase) {
-                    waitingOverlay
-                }
-
                 if areControlsVisible {
                     controlBar
                         .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -483,54 +479,60 @@ struct CallScreen: View {
             }
 
             if shouldShowWaitingOverlay(phase: uiState.phase) {
-                QRCodeImageView(text: "https://\(serverHost)/call/\(roomId)")
+                VStack(spacing: 10) {
+                    if let savedRoomName, !savedRoomName.isEmpty {
+                        Text(savedRoomName)
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .multilineTextAlignment(.center)
+                    }
+
+                    Text(L10n.callWaitingOverlay)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+
+                    QRCodeImageView(text: "https://\(serverHost)/call/\(roomId)")
+                        .padding(.vertical, 6)
+
+                    Button {
+                        Task {
+                            let result = await onInviteToRoom()
+                            await MainActor.run {
+                                switch result {
+                                case .success:
+                                    inviteStatusMessage = L10n.callInviteSent
+                                case .failure:
+                                    inviteStatusMessage = L10n.callInviteFailed
+                                }
+                            }
+                        }
+                    } label: {
+                        Label(L10n.callInviteToRoom, systemImage: "bell.badge.fill")
+                            .font(.subheadline.weight(.semibold))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .background(Color.white.opacity(0.2))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .foregroundStyle(.white)
+                    }
+                    .buttonStyle(.plain)
+
+                    if let inviteStatusMessage, !inviteStatusMessage.isEmpty {
+                        Text(inviteStatusMessage)
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.white.opacity(0.9))
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(Color.black.opacity(0.45))
+                .clipShape(RoundedRectangle(cornerRadius: 14))
             }
         }
         .padding(.horizontal, 16)
         .padding(.top, 16)
         .opacity(uiState.phase == .waiting ? 1 : (areControlsVisible ? 1 : 0))
-    }
-
-    private var waitingOverlay: some View {
-        VStack(spacing: 12) {
-            Text(L10n.callWaitingOverlay)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.white)
-
-            Button {
-                Task {
-                    let result = await onInviteToRoom()
-                    await MainActor.run {
-                        switch result {
-                        case .success:
-                            inviteStatusMessage = L10n.callInviteSent
-                        case .failure:
-                            inviteStatusMessage = L10n.callInviteFailed
-                        }
-                    }
-                }
-            } label: {
-                Label(L10n.callInviteToRoom, systemImage: "bell.badge.fill")
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(Color.white.opacity(0.2))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .foregroundStyle(.white)
-            }
-            .buttonStyle(.plain)
-
-            if let inviteStatusMessage, !inviteStatusMessage.isEmpty {
-                Text(inviteStatusMessage)
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.9))
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(Color.black.opacity(0.45))
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-        .padding(.bottom, 20)
     }
 
     private var controlBar: some View {
@@ -659,6 +661,10 @@ struct CallScreen: View {
 
     private var isLandscape: Bool {
         verticalSizeClass == .compact
+    }
+
+    private var savedRoomName: String? {
+        callManager.savedRooms.first(where: { $0.roomId == roomId })?.name
     }
 }
 

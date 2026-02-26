@@ -154,6 +154,9 @@ struct JoinScreen: View {
                 saveRoomDialogName = room.name
                 saveRoomDialogIsRename = true
             },
+            onShareSavedRoom: { room in
+                shareLink = buildSavedRoomShareLink(for: room)
+            },
             onRemoveSavedRoom: onRemoveSavedRoom
         )
     }
@@ -232,11 +235,12 @@ private struct RecentCallsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(L10n.recentCallsTitle)
-                .font(.headline)
+            Label(L10n.recentCallsTitle, systemImage: "clock")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
                 .padding(.horizontal, 4)
-                .padding(.top, 8)
-                .padding(.bottom, 4)
+                .padding(.top, 12)
+                .padding(.bottom, 6)
 
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(calls) { call in
@@ -245,12 +249,12 @@ private struct RecentCallsSection: View {
                         onJoinRecentCall(call.roomId)
                     } label: {
                         HStack(spacing: 12) {
-                            StatusDot(count: roomStatuses[call.roomId] ?? 0)
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(formatDateTime(call.startTime))
                                     .font(.subheadline)
                                     .foregroundStyle(.primary)
                                     .lineLimit(1)
+
                                 if let roomName {
                                     Text(roomName)
                                         .font(.caption)
@@ -258,15 +262,20 @@ private struct RecentCallsSection: View {
                                         .lineLimit(1)
                                 }
                             }
+                            .frame(maxWidth: .infinity, alignment: .leading)
 
-                            Spacer()
+                            HStack(alignment: .center, spacing: 8) {
+                                Text(formatDuration(call.durationSeconds))
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
 
-                            Text(formatDuration(call.durationSeconds))
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                                StatusDot(count: roomStatuses[call.roomId] ?? 0)
+                            }
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -327,20 +336,22 @@ private struct SavedRoomsSection: View {
     let onCreate: () -> Void
     let onJoinSavedRoom: (SavedRoom) -> Void
     let onRenameSavedRoom: (SavedRoom) -> Void
+    let onShareSavedRoom: (SavedRoom) -> Void
     let onRemoveSavedRoom: (String) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(rooms.isEmpty ? L10n.savedRoomsTitleEmpty : L10n.savedRoomsTitle)
-                    .font(.headline)
+                Label(rooms.isEmpty ? L10n.savedRoomsTitleEmpty : L10n.savedRoomsTitle, systemImage: "bookmark.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
                 Spacer()
                 Button(L10n.savedRoomsCreate, action: onCreate)
                     .disabled(isBusy)
             }
             .padding(.horizontal, 4)
-            .padding(.top, 8)
-            .padding(.bottom, 4)
+            .padding(.top, 12)
+            .padding(.bottom, 6)
 
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(rooms) { room in
@@ -348,7 +359,6 @@ private struct SavedRoomsSection: View {
                         onJoinSavedRoom(room)
                     } label: {
                         HStack(spacing: 12) {
-                            StatusDot(count: roomStatuses[room.roomId] ?? 0)
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(room.name)
                                     .font(.subheadline)
@@ -357,10 +367,14 @@ private struct SavedRoomsSection: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
+                            .frame(maxWidth: .infinity, alignment: .leading)
                             Spacer()
+
+                            StatusDot(count: roomStatuses[room.roomId] ?? 0)
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -369,6 +383,11 @@ private struct SavedRoomsSection: View {
                             onRenameSavedRoom(room)
                         } label: {
                             Label(L10n.savedRoomsRename, systemImage: "square.and.pencil")
+                        }
+                        Button {
+                            onShareSavedRoom(room)
+                        } label: {
+                            Label(L10n.savedRoomsShareLinkChooser, systemImage: "square.and.arrow.up")
                         }
                         Button(role: .destructive) {
                             onRemoveSavedRoom(room.roomId)
@@ -406,6 +425,7 @@ private struct CreateSavedRoomSheet: View {
     let onCreatedLink: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @FocusState private var isRoomNameFieldFocused: Bool
     @State private var roomName = ""
     @State private var isCreating = false
     @State private var errorMessage: String?
@@ -416,6 +436,7 @@ private struct CreateSavedRoomSheet: View {
                 Section(L10n.savedRoomsDialogTitleCreate) {
                     TextField(L10n.savedRoomsNameLabel, text: $roomName)
                         .textInputAutocapitalization(.sentences)
+                        .focused($isRoomNameFieldFocused)
                 }
 
                 if let errorMessage, !errorMessage.isEmpty {
@@ -444,6 +465,11 @@ private struct CreateSavedRoomSheet: View {
                         .tint(.accentColor)
                     }
                 }
+            }
+        }
+        .onAppear {
+            DispatchQueue.main.async {
+                isRoomNameFieldFocused = true
             }
         }
     }
@@ -475,6 +501,22 @@ private struct CreateSavedRoomSheet: View {
     }
 }
 
+private func buildSavedRoomShareLink(for room: SavedRoom) -> String {
+    let resolvedHost = DeepLinkParser.normalizeHostValue(room.host) ?? AppConstants.defaultHost
+    let appLinkHost = resolvedHost == AppConstants.ruHost ? AppConstants.ruHost : AppConstants.defaultHost
+
+    var components = URLComponents()
+    components.scheme = "https"
+    components.host = appLinkHost
+    components.path = "/call/\(room.roomId)"
+    components.queryItems = [
+        URLQueryItem(name: "host", value: resolvedHost),
+        URLQueryItem(name: "name", value: room.name)
+    ]
+
+    return components.url?.absoluteString ?? "https://\(appLinkHost)/call/\(room.roomId)"
+}
+
 private struct StatusDot: View {
     let count: Int
 
@@ -489,8 +531,12 @@ private struct StatusDot: View {
     }
 
     var body: some View {
-        Circle()
-            .fill(dotColor)
-            .frame(width: 8, height: 8)
+        Group {
+            if count >= 1 {
+                Circle()
+                    .fill(dotColor)
+                    .frame(width: 8, height: 8)
+            }
+        }
     }
 }
