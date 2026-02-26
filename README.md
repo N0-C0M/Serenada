@@ -17,9 +17,10 @@ A simple, privacy-focused 1:1 video calling application built with WebRTC. No ac
 - **Android camera source cycle** – In-call source switch cycles through `selfie` (default) -> `world` -> `composite` (world feed with circular selfie overlay), automatically skips `composite` when unsupported, and shows a flashlight toggle in `world`/`composite` when flash hardware is available; flashlight preference is remembered during the call and reapplied when returning to supported modes
 - **Android world/composite pinch zoom** – When local video is the large in-call view in `world` or `composite`, pinch gesture zooms the camera capture itself so both local preview and the remote participant see the zoomed detail
 - **Android HD video toggle (experimental)** – Settings include an `HD Video (experimental)` switch for higher camera/composite quality; default mode keeps legacy `640x480` camera constraints for stability
+- **iOS native client (SwiftUI)** – Native iOS app in `client-ios/` mirrors Android parity flow: saved rooms + recents ordering, structured deep-link parsing, invite push toggle, encrypted push snapshots, waiting-room invite action, diagnostics screen, mode-based camera cycle with composite fallback, world/composite pinch zoom, ReplayKit screen share toggle, and in-call realtime stats/debug panel
 - **Self-hostable** – Run your own instance with full control
-- **Optional join alerts** – Encrypted push notifications with snapshot previews (web + native Android)
-- **Room invite push** – In waiting state you can explicitly invite subscribers of the room; Android shows these only for saved rooms and has a Settings toggle to disable invite notifications
+- **Optional join alerts** – Encrypted push notifications with snapshot previews (web + native Android + native iOS)
+- **Room invite push** – In waiting state you can explicitly invite subscribers of the room; Android and iOS show these only for saved rooms and have a Settings toggle to disable invite notifications
 
 ## Quick Start
 
@@ -75,6 +76,33 @@ The native Android app lives in `client-android/`.
 By default the app targets `https://serenada.app`, and the server host can be changed in Settings.
 The Android app language can also be set in Settings: `Auto (default)`, `English`, `Русский`, `Español`, `Français`. `Auto` follows the device language and falls back to English.
 To enable native Android push receive, provide Firebase Gradle properties when building the app (`firebaseAppId`, `firebaseApiKey`, `firebaseProjectId`, `firebaseSenderId`).
+
+### iOS Client (Swift + SwiftUI)
+The native iOS app lives in `client-ios/`.
+
+1. Install `xcodegen` (if not already installed).
+2. Generate project files:
+   ```bash
+   cd client-ios
+   xcodegen generate
+   ```
+3. Open `SerenadaiOS.xcodeproj` in Xcode.
+4. Run `SerenadaiOS` on iOS 16+ simulator/device.
+5. Build and vendor pinned WebRTC XCFramework:
+   ```bash
+   bash tools/build_libwebrtc_ios_7559.sh
+   ```
+   This script also patches `rtc_base/ssl_roots.h` from the current root bundle (same approach as Android) and strips dSYMs by default to keep repository artifact size manageable.
+6. If you replace `client-ios/Vendor/WebRTC/WebRTC.xcframework` manually, regenerate checksum:
+   ```bash
+   cd client-ios
+   ./scripts/update_webrtc_checksum.sh
+   ```
+7. For local-only device signing overrides (without committing team IDs), use `client-ios/LocalSigning.xcconfig`. See `client-ios/README.md`.
+
+iOS universal links are enabled for `serenada.app` and `serenada-app.ru` via associated domains plus `/.well-known/apple-app-site-association`.
+Note: iOS Simulator can run signaling and call flow, but local camera preview reliability varies by host setup; use a physical iPhone to validate local camera capture.
+
 ### Production Deployment
 
 See [DEPLOY.md](DEPLOY.md) for detailed self-hosting instructions.
@@ -156,6 +184,7 @@ Detailed request/timing sequence:
 - [Protocol Specification](serenada_protocol_v1.md) – Signaling protocol (WebSocket + SSE)
 - [Push Notifications](push-notifications.md) – Encrypted snapshot notifications
 - [Android Client README](client-android/README.md) – Kotlin native app setup and build notes
+- [iOS Client README](client-ios/README.md) – SwiftUI native app setup and build notes
 - `server/loadtest/run-local.sh` – Local signaling load sweep runner
 - [`server/loadtest/LOAD_SIMULATION_SEQUENCE.md`](server/loadtest/LOAD_SIMULATION_SEQUENCE.md) – Detailed load-conduit HTTP/WS call sequence and timing
 
