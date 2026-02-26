@@ -17,11 +17,7 @@ struct JoinScreen: View {
     let onCreateSavedRoomInviteLink: (String) async -> Result<String, Error>
     let onRemoveSavedRoom: (String) -> Void
 
-    @State private var saveRoomDialogTargetId: String?
-    @State private var saveRoomDialogName = ""
-    @State private var saveRoomDialogIsRename = false
-
-    @State private var showCreateRoomSheet = false
+    @State private var savedRoomSheetContext: SavedRoomSheetContext?
     @State private var shareLink: String?
 
     var body: some View {
@@ -68,32 +64,11 @@ struct JoinScreen: View {
                 busyOverlay
             }
         }
-        .alert(
-            saveRoomDialogIsRename ? L10n.savedRoomsDialogTitleRename : L10n.savedRoomsDialogTitleNew,
-            isPresented: Binding(
-                get: { saveRoomDialogTargetId != nil },
-                set: { isPresented in
-                    if !isPresented {
-                        saveRoomDialogTargetId = nil
-                        saveRoomDialogName = ""
-                        saveRoomDialogIsRename = false
-                    }
-                }
-            )
-        ) {
-            TextField(L10n.savedRoomsNameLabel, text: $saveRoomDialogName)
-            Button(L10n.settingsCancel, role: .cancel) {}
-            Button(L10n.settingsSave) {
-                guard let roomId = saveRoomDialogTargetId else { return }
-                onSaveRoom(roomId, saveRoomDialogName)
-                saveRoomDialogTargetId = nil
-                saveRoomDialogName = ""
-                saveRoomDialogIsRename = false
-            }
-            .disabled(saveRoomDialogName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        }
-        .sheet(isPresented: $showCreateRoomSheet) {
+        .sheet(item: $savedRoomSheetContext) { context in
             CreateSavedRoomSheet(
+                mode: context.mode,
+                initialName: context.initialName,
+                onSaveRoom: onSaveRoom,
                 onCreateSavedRoomInviteLink: onCreateSavedRoomInviteLink,
                 onCreatedLink: { link in
                     shareLink = link
@@ -147,12 +122,12 @@ struct JoinScreen: View {
             rooms: savedRooms,
             roomStatuses: roomStatuses,
             isBusy: isBusy,
-            onCreate: { showCreateRoomSheet = true },
+            onCreate: {
+                savedRoomSheetContext = SavedRoomSheetContext(mode: .create, initialName: "")
+            },
             onJoinSavedRoom: onJoinSavedRoom,
             onRenameSavedRoom: { room in
-                saveRoomDialogTargetId = room.roomId
-                saveRoomDialogName = room.name
-                saveRoomDialogIsRename = true
+                savedRoomSheetContext = SavedRoomSheetContext(mode: .rename(roomId: room.roomId), initialName: room.name)
             },
             onShareSavedRoom: { room in
                 shareLink = buildSavedRoomShareLink(for: room)
@@ -169,9 +144,11 @@ struct JoinScreen: View {
             isBusy: isBusy,
             onJoinRecentCall: onJoinRecentCall,
             onSaveRecentCall: { roomId, existingName in
-                saveRoomDialogTargetId = roomId
-                saveRoomDialogName = existingName ?? ""
-                saveRoomDialogIsRename = existingName != nil
+                if let existingName {
+                    savedRoomSheetContext = SavedRoomSheetContext(mode: .rename(roomId: roomId), initialName: existingName)
+                } else {
+                    savedRoomSheetContext = SavedRoomSheetContext(mode: .save(roomId: roomId), initialName: "")
+                }
             },
             onRemoveRecentCall: onRemoveRecentCall
         )
@@ -380,14 +357,14 @@ private struct SavedRoomsSection: View {
                     .buttonStyle(.plain)
                     .contextMenu {
                         Button {
-                            onRenameSavedRoom(room)
-                        } label: {
-                            Label(L10n.savedRoomsRename, systemImage: "square.and.pencil")
-                        }
-                        Button {
                             onShareSavedRoom(room)
                         } label: {
                             Label(L10n.savedRoomsShareLinkChooser, systemImage: "square.and.arrow.up")
+                        }
+                        Button {
+                            onRenameSavedRoom(room)
+                        } label: {
+                            Label(L10n.savedRoomsRename, systemImage: "square.and.pencil")
                         }
                         Button(role: .destructive) {
                             onRemoveSavedRoom(room.roomId)
@@ -421,19 +398,37 @@ private struct SavedRoomsSection: View {
 }
 
 private struct CreateSavedRoomSheet: View {
+    let mode: SavedRoomSheetMode
+    let initialName: String
+    let onSaveRoom: (String, String) -> Void
     let onCreateSavedRoomInviteLink: (String) async -> Result<String, Error>
     let onCreatedLink: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @FocusState private var isRoomNameFieldFocused: Bool
-    @State private var roomName = ""
-    @State private var isCreating = false
+    @State private var roomName: String
+    @State private var isSubmitting = false
     @State private var errorMessage: String?
+
+    init(
+        mode: SavedRoomSheetMode,
+        initialName: String,
+        onSaveRoom: @escaping (String, String) -> Void,
+        onCreateSavedRoomInviteLink: @escaping (String) async -> Result<String, Error>,
+        onCreatedLink: @escaping (String) -> Void
+    ) {
+        self.mode = mode
+        self.initialName = initialName
+        self.onSaveRoom = onSaveRoom
+        self.onCreateSavedRoomInviteLink = onCreateSavedRoomInviteLink
+        self.onCreatedLink = onCreatedLink
+        _roomName = State(initialValue: initialName)
+    }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section(L10n.savedRoomsDialogTitleCreate) {
+                Section(formTitle) {
                     TextField(L10n.savedRoomsNameLabel, text: $roomName)
                         .textInputAutocapitalization(.sentences)
                         .focused($isRoomNameFieldFocused)
@@ -447,19 +442,19 @@ private struct CreateSavedRoomSheet: View {
                     }
                 }
             }
-            .navigationTitle(L10n.savedRoomsDialogTitleCreate)
+            .navigationTitle(formTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(L10n.settingsCancel) { dismiss() }
-                        .disabled(isCreating)
+                        .disabled(isSubmitting)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    if isCreating {
+                    if isSubmitting {
                         ProgressView()
                     } else {
-                        Button(L10n.savedRoomsCreateAction) {
-                            create()
+                        Button(confirmTitle) {
+                            submit()
                         }
                         .disabled(roomName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         .tint(.accentColor)
@@ -474,20 +469,48 @@ private struct CreateSavedRoomSheet: View {
         }
     }
 
-    private func create() {
+    private var formTitle: String {
+        switch mode {
+        case .create:
+            return L10n.savedRoomsDialogTitleCreate
+        case .save:
+            return L10n.savedRoomsDialogTitleNew
+        case .rename:
+            return L10n.savedRoomsDialogTitleRename
+        }
+    }
+
+    private var confirmTitle: String {
+        switch mode {
+        case .create:
+            return L10n.savedRoomsCreateAction
+        case .save, .rename:
+            return L10n.settingsSave
+        }
+    }
+
+    private func submit() {
         let normalized = roomName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else {
             errorMessage = L10n.errorInvalidSavedRoomName
             return
         }
 
-        isCreating = true
+        switch mode {
+        case .create:
+            isSubmitting = true
+        case .save(let roomId), .rename(let roomId):
+            onSaveRoom(roomId, normalized)
+            dismiss()
+            return
+        }
+
         errorMessage = nil
 
         Task {
             let result = await onCreateSavedRoomInviteLink(normalized)
             await MainActor.run {
-                isCreating = false
+                isSubmitting = false
                 switch result {
                 case .success(let link):
                     onCreatedLink(link)
@@ -499,6 +522,18 @@ private struct CreateSavedRoomSheet: View {
             }
         }
     }
+}
+
+private enum SavedRoomSheetMode {
+    case create
+    case save(roomId: String)
+    case rename(roomId: String)
+}
+
+private struct SavedRoomSheetContext: Identifiable {
+    let id = UUID()
+    let mode: SavedRoomSheetMode
+    let initialName: String
 }
 
 private func buildSavedRoomShareLink(for room: SavedRoom) -> String {
