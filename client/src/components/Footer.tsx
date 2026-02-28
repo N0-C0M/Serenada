@@ -88,7 +88,7 @@ const Footer: React.FC = () => {
                 </a>
 
                 <a
-                    href="https://www.donationalerts.com/"
+                    href="https://dalink.to/nocomdev"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="footer-link"
