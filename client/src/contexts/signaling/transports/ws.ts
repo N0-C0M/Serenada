@@ -1,5 +1,6 @@
 import type { SignalingMessage } from '../types';
 import type { SignalingTransport, TransportHandlers, TransportKind } from './types';
+import { CONNECT_TIMEOUT_MS } from '../../../constants/webrtcResilience';
 
 const getWsUrl = () => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -17,43 +18,48 @@ export class WebSocketTransport implements SignalingTransport {
         this.handlers = handlers;
     }
 
+    private clearConnectTimeout() {
+        if (this.connectTimeout) {
+            window.clearTimeout(this.connectTimeout);
+            this.connectTimeout = null;
+        }
+    }
+
+    private detachSocketHandlers(ws: WebSocket) {
+        ws.onopen = null;
+        ws.onclose = null;
+        ws.onerror = null;
+        ws.onmessage = null;
+    }
+
     connect() {
         const wsUrl = getWsUrl();
         this.ws = new WebSocket(wsUrl);
 
-        // 2-second timeout for connection to open (handles hanging connections)
+        // Timeout for connection to open (handles hanging connections)
         this.connectTimeout = window.setTimeout(() => {
             if (this.ws && this.ws.readyState !== WebSocket.OPEN) {
-                console.warn('[WS] Connection timeout after 2s');
+                console.warn(`[WS] Connection timeout after ${CONNECT_TIMEOUT_MS}ms`);
                 this.ws.close();
                 this.open = false;
                 this.handlers.onClose('timeout');
             }
-        }, 2000);
+        }, CONNECT_TIMEOUT_MS);
 
         this.ws.onopen = () => {
-            if (this.connectTimeout) {
-                window.clearTimeout(this.connectTimeout);
-                this.connectTimeout = null;
-            }
+            this.clearConnectTimeout();
             this.open = true;
             this.handlers.onOpen();
         };
 
         this.ws.onclose = (evt) => {
-            if (this.connectTimeout) {
-                window.clearTimeout(this.connectTimeout);
-                this.connectTimeout = null;
-            }
+            this.clearConnectTimeout();
             this.open = false;
             this.handlers.onClose('close', evt);
         };
 
         this.ws.onerror = (err) => {
-            if (this.connectTimeout) {
-                window.clearTimeout(this.connectTimeout);
-                this.connectTimeout = null;
-            }
+            this.clearConnectTimeout();
             this.open = false;
             this.handlers.onClose('error', err);
         };
@@ -69,15 +75,26 @@ export class WebSocketTransport implements SignalingTransport {
     }
 
     close() {
-        if (this.connectTimeout) {
-            window.clearTimeout(this.connectTimeout);
-            this.connectTimeout = null;
-        }
-        if (this.ws) {
-            this.ws.close();
-            this.ws = null;
+        this.clearConnectTimeout();
+        const ws = this.ws;
+        this.ws = null;
+        if (ws) {
+            this.detachSocketHandlers(ws);
+            ws.close();
         }
         this.open = false;
+    }
+
+    forceClose(reason: string) {
+        this.clearConnectTimeout();
+        const ws = this.ws;
+        this.ws = null;
+        if (ws) {
+            this.detachSocketHandlers(ws);
+            ws.close();
+        }
+        this.open = false;
+        this.handlers.onClose(reason);
     }
 
     isOpen() {

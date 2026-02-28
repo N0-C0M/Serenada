@@ -30,6 +30,9 @@ final class SignalingClient {
     private var activeTransportImpl: SignalingTransport?
     private var normalizedHost: String?
     private var closedByClient = false
+    private var wsConsecutiveFailures = 0
+    private var lastPongAt: CFAbsoluteTime = CFAbsoluteTimeGetCurrent()
+    private var missedPongs = 0
 
     init(forceSseSignaling: Bool = false) {
         self.transportOrder = forceSseSignaling ? [.sse] : [.ws, .sse]
@@ -81,14 +84,36 @@ final class SignalingClient {
         resetTransportSessions()
     }
 
+    func recordPong() {
+        lastPongAt = CFAbsoluteTimeGetCurrent()
+        missedPongs = 0
+    }
+
     private func startPing() {
         stopPing()
+        lastPongAt = CFAbsoluteTimeGetCurrent()
+        missedPongs = 0
         pingTask = Task { [weak self] in
             guard let self else { return }
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 12_000_000_000)
+                try? await Task.sleep(nanoseconds: WebRtcResilience.pingIntervalNs)
                 if Task.isCancelled { return }
                 if !self.connected { continue }
+
+                // Check for missed pongs
+                let pingTimeoutSeconds = Double(WebRtcResilience.pingIntervalMs) / 1000.0
+                let elapsed = CFAbsoluteTimeGetCurrent() - self.lastPongAt
+                if elapsed > pingTimeoutSeconds {
+                    self.missedPongs += 1
+                    if self.missedPongs >= WebRtcResilience.pongMissThreshold {
+                        self.missedPongs = 0
+                        guard let kind = self.activeTransport else { continue }
+                        let attemptId = self.activeAttemptId
+                        self.handleTransportClosed(attemptId: attemptId, kind: kind, reason: "pong_timeout")
+                        return
+                    }
+                }
+
                 self.send(SignalingMessage(type: "ping"))
             }
         }
@@ -104,7 +129,7 @@ final class SignalingClient {
 
         connectTimeoutTask = Task { [weak self] in
             guard let self else { return }
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            try? await Task.sleep(nanoseconds: WebRtcResilience.connectTimeoutNs)
             guard !Task.isCancelled else { return }
             guard let kind = self.activeTransport else { return }
             guard self.isAttemptActive(attemptId: attemptId, kind: kind) else { return }
@@ -168,6 +193,9 @@ final class SignalingClient {
         connecting = false
         connected = true
         transportConnectedOnce[kind] = true
+        if kind == .ws { wsConsecutiveFailures = 0 }
+        lastPongAt = CFAbsoluteTimeGetCurrent()
+        missedPongs = 0
 
         listener?.onOpen(activeTransport: kind.wireName)
         startPing()
@@ -184,6 +212,7 @@ final class SignalingClient {
         activeAttemptId = -abs(attemptId)
         activeTransport = nil
         activeTransportImpl = nil
+        if kind == .ws { wsConsecutiveFailures += 1 }
         closeTransports()
 
         if closedByClient {
@@ -201,7 +230,10 @@ final class SignalingClient {
         if transportOrder.count <= 1 { return false }
         if transportIndex >= transportOrder.count - 1 { return false }
         if reason == "unsupported" || reason == "timeout" { return true }
-        return transportConnectedOnce[kind] != true
+        if transportConnectedOnce[kind] != true { return true }
+        // Allow SSE fallback after consecutive WS failures even if WS connected before
+        if kind == .ws && wsConsecutiveFailures >= WebRtcResilience.wsFallbackConsecutiveFailures { return true }
+        return false
     }
 
     @discardableResult

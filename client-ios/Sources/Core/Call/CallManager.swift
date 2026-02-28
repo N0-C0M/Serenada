@@ -30,13 +30,7 @@ func resolveJoinRecoveryState(
 
 @MainActor
 final class CallManager: ObservableObject {
-    private enum Constants {
-        static let joinTimeoutNs: UInt64 = 12_000_000_000
-        static let joinConnectKickstartNs: UInt64 = 1_200_000_000
-        static let permissionRequestTimeoutNs: UInt64 = 2_000_000_000
-        static let turnFetchTimeoutNs: UInt64 = 2_000_000_000
-        static let nonHostOfferFallbackNs: UInt64 = 4_000_000_000
-    }
+    private let permissionRequestTimeoutNs: UInt64 = 2_000_000_000
 
     #if DEBUG
     private enum DebugTrace {
@@ -107,6 +101,8 @@ final class CallManager: ObservableObject {
     private var iceRestartTask: Task<Void, Never>?
     private var offerTimeoutTask: Task<Void, Never>?
     private var nonHostOfferFallbackTask: Task<Void, Never>?
+    private var nonHostOfferFallbackAttempts = 0
+    private var turnRefreshTask: Task<Void, Never>?
     private var remoteVideoPollTimer: Timer?
 
     private var lastWebRtcStatsPollAtMs: Int64 = 0
@@ -116,6 +112,8 @@ final class CallManager: ObservableObject {
     private var hasJoinAcknowledgedCurrentAttempt = false
     private var hasInitializedIceSetupForAttempt = false
     private var lastTurnTokenForAttempt: String?
+    private var reconnectToken: String?
+    private var turnTokenTTLMs: Int64?
 
     private var userPreferredVideoEnabled = true
     private var isVideoPausedByProximity = false
@@ -189,6 +187,7 @@ final class CallManager: ObservableObject {
         iceRestartTask?.cancel()
         offerTimeoutTask?.cancel()
         nonHostOfferFallbackTask?.cancel()
+        turnRefreshTask?.cancel()
         remoteVideoPollTimer?.invalidate()
         UIApplication.shared.isIdleTimerDisabled = false
     }
@@ -626,6 +625,9 @@ final class CallManager: ObservableObject {
             if let reconnectCid {
                 payload["reconnectCid"] = .string(reconnectCid)
             }
+            if let reconnectToken = self.reconnectToken {
+                payload["reconnectToken"] = .string(reconnectToken)
+            }
             if let endpoint, !endpoint.isEmpty {
                 payload["pushEndpoint"] = .string(endpoint)
             }
@@ -660,7 +662,7 @@ final class CallManager: ObservableObject {
                 return await self.pushSubscriptionManager.refreshPushEndpoint()
             }
             group.addTask {
-                try? await Task.sleep(nanoseconds: 250_000_000)
+                try? await Task.sleep(nanoseconds: WebRtcResilience.joinPushEndpointWaitNs)
                 return nil
             }
 
@@ -706,6 +708,10 @@ final class CallManager: ObservableObject {
             roomStatuses = RoomStatuses.mergeStatusesPayload(previous: roomStatuses, payload: message.payload)
         case "room_status_update":
             roomStatuses = RoomStatuses.mergeStatusUpdatePayload(previous: roomStatuses, payload: message.payload)
+        case "pong":
+            signalingClient.recordPong()
+        case "turn-refreshed":
+            handleTurnRefreshed(message)
         case "offer", "answer", "ice":
             handleSignalingPayload(message)
         case "error":
@@ -728,6 +734,14 @@ final class CallManager: ObservableObject {
         hasJoinAcknowledgedCurrentAttempt = true
         clientId = message.cid
         settingsStore.reconnectCid = message.cid
+
+        if let token = message.payload?.objectValue?["reconnectToken"]?.stringValue {
+            reconnectToken = token
+        }
+        if let ttl = message.payload?.objectValue?["turnTokenTTLMs"]?.intValue {
+            turnTokenTTLMs = Int64(ttl)
+            scheduleTurnRefresh(ttlMs: Int64(ttl))
+        }
 
         if let joinedRoomId = message.rid ?? currentRoomId {
             pushSubscriptionManager.subscribeRoom(roomId: joinedRoomId, host: currentSignalingHost())
@@ -1018,7 +1032,7 @@ final class CallManager: ObservableObject {
         clearOfferTimeout()
 
         offerTimeoutTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 8_000_000_000)
+            try? await Task.sleep(nanoseconds: WebRtcResilience.offerTimeoutNs)
             guard !Task.isCancelled else { return }
             guard let self else { return }
 
@@ -1057,15 +1071,18 @@ final class CallManager: ObservableObject {
         }
         guard signalingClient.isConnected() else { return }
         guard nonHostOfferFallbackTask == nil else { return }
+        guard nonHostOfferFallbackAttempts < WebRtcResilience.nonHostFallbackMaxAttempts else { return }
 
         debugTrace("nonHostOfferFallback scheduled rid=\(roomId) reason=\(reason)")
         nonHostOfferFallbackTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: Constants.nonHostOfferFallbackNs)
+            try? await Task.sleep(nanoseconds: WebRtcResilience.nonHostFallbackDelayNs)
             guard !Task.isCancelled else { return }
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.nonHostOfferFallbackTask = nil
                 guard self.currentRoomId == roomId else { return }
+                self.nonHostOfferFallbackAttempts += 1
+                self.debugTrace("nonHostOfferFallback trigger (attempt \(self.nonHostOfferFallbackAttempts))")
                 self.maybeSendNonHostFallbackOffer()
             }
         }
@@ -1126,7 +1143,7 @@ final class CallManager: ObservableObject {
         debugTrace("scheduleJoinTimeout rid=\(roomId) attempt=\(joinAttempt)")
 
         joinTimeoutTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: Constants.joinTimeoutNs)
+            try? await Task.sleep(nanoseconds: WebRtcResilience.joinHardTimeoutNs)
             guard !Task.isCancelled else { return }
             guard let self else { return }
 
@@ -1151,7 +1168,7 @@ final class CallManager: ObservableObject {
         debugTrace("scheduleJoinConnectKickstart rid=\(roomId) attempt=\(joinAttempt)")
 
         joinConnectKickstartTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: Constants.joinConnectKickstartNs)
+            try? await Task.sleep(nanoseconds: WebRtcResilience.joinConnectKickstartNs)
             guard !Task.isCancelled else { return }
             guard let self else { return }
 
@@ -1192,7 +1209,7 @@ final class CallManager: ObservableObject {
         }
 
         let now = Date().timeIntervalSince1970 * 1000
-        if now - lastIceRestartAt < 10_000 {
+        if now - lastIceRestartAt < Double(WebRtcResilience.iceRestartCooldownMs) {
             return
         }
 
@@ -1242,9 +1259,10 @@ final class CallManager: ObservableObject {
         let joinAttemptAtFetchStart = joinAttemptSerial
         Task {
             let outcome = await withTaskGroup(of: TurnFetchOutcome.self) { group in
-                group.addTask { [apiClient, serverHost] in
+                let host = self.currentSignalingHost()
+                group.addTask { [apiClient] in
                     do {
-                        let credentials = try await apiClient.fetchTurnCredentials(host: serverHost, token: token)
+                        let credentials = try await apiClient.fetchTurnCredentials(host: host, token: token)
                         return .success(credentials)
                     } catch {
                         return .failed
@@ -1252,7 +1270,7 @@ final class CallManager: ObservableObject {
                 }
 
                 group.addTask {
-                    try? await Task.sleep(nanoseconds: Constants.turnFetchTimeoutNs)
+                    try? await Task.sleep(nanoseconds: WebRtcResilience.turnFetchTimeoutNs)
                     return .timedOut
                 }
 
@@ -1292,6 +1310,41 @@ final class CallManager: ObservableObject {
         flushPendingMessages()
         maybeSendOffer()
         maybeScheduleNonHostOfferFallback(reason: "turn-ready")
+    }
+
+    private func handleTurnRefreshed(_ message: SignalingMessage) {
+        guard currentRoomId != nil else { return }
+        debugTrace("rx turn-refreshed")
+        if let ttl = message.payload?.objectValue?["turnTokenTTLMs"]?.intValue {
+            turnTokenTTLMs = Int64(ttl)
+            scheduleTurnRefresh(ttlMs: Int64(ttl))
+        }
+        ensureIceSetupIfNeeded(
+            turnToken: turnToken(from: message.payload),
+            source: "turn-refreshed"
+        )
+    }
+
+    private func scheduleTurnRefresh(ttlMs: Int64) {
+        clearTurnRefresh()
+        guard ttlMs > 0 else { return }
+        let delayNs = UInt64(Double(ttlMs) * WebRtcResilience.turnRefreshTriggerRatio * 1_000_000)
+        let roomId = currentRoomId
+
+        turnRefreshTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: delayNs)
+            guard !Task.isCancelled else { return }
+            guard let self else { return }
+            guard self.currentRoomId == roomId, self.currentRoomId != nil else { return }
+            guard self.signalingClient.isConnected() else { return }
+            self.debugTrace("turn-refresh send")
+            self.sendMessage(type: "turn-refresh")
+        }
+    }
+
+    private func clearTurnRefresh() {
+        turnRefreshTask?.cancel()
+        turnRefreshTask = nil
     }
 
     private func applyDefaultIceServers() {
@@ -1453,7 +1506,9 @@ final class CallManager: ObservableObject {
         clearJoinRecovery()
         clearOfferTimeout()
         clearNonHostOfferFallback()
+        nonHostOfferFallbackAttempts = 0
         clearIceRestartTimer()
+        clearTurnRefresh()
 
         userPreferredVideoEnabled = true
         isVideoPausedByProximity = false
@@ -1461,6 +1516,8 @@ final class CallManager: ObservableObject {
         hasJoinAcknowledgedCurrentAttempt = false
         hasInitializedIceSetupForAttempt = false
         lastTurnTokenForAttempt = nil
+        reconnectToken = nil
+        turnTokenTTLMs = nil
     }
 
     private func applyLocalVideoPreference() {
@@ -1514,10 +1571,7 @@ final class CallManager: ObservableObject {
 
         startRemoteVideoStatePolling()
 
-        pendingJoinRoom = roomId
-        if !hasJoinSignalStartedForAttempt {
-            ensureSignalingConnection()
-        }
+        clearJoinConnectKickstart()
         prepareJoinSnapshotAndConnect(roomId: roomId, joinAttempt: joinAttempt)
     }
 
@@ -1536,15 +1590,7 @@ final class CallManager: ObservableObject {
                 guard self.isJoinAttemptActive(roomId: roomId, joinAttempt: joinAttempt) else { return }
                 self.debugTrace("joinSnapshot ready rid=\(roomId) hasSnapshot=\(snapshotId == nil ? "no" : "yes")")
                 self.pendingJoinSnapshotId = snapshotId
-                let shouldEnsure =
-                    !self.hasJoinSignalStartedForAttempt ||
-                    self.pendingJoinRoom != nil ||
-                    !self.signalingClient.isConnected()
-                if shouldEnsure {
-                    self.ensureSignalingConnection()
-                } else {
-                    self.debugTrace("joinSnapshot skipEnsure rid=\(roomId) reason=join-already-started")
-                }
+                self.ensureSignalingConnection()
             }
         )
     }
@@ -1636,7 +1682,7 @@ final class CallManager: ObservableObject {
             }
 
             Task {
-                try? await Task.sleep(nanoseconds: Constants.permissionRequestTimeoutNs)
+                try? await Task.sleep(nanoseconds: permissionRequestTimeoutNs)
                 resolve(fallback, timedOut: true)
             }
         }
@@ -1654,7 +1700,7 @@ final class CallManager: ObservableObject {
         clearJoinRecovery()
 
         joinRecoveryTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            try? await Task.sleep(nanoseconds: WebRtcResilience.joinRecoveryNs)
             guard !Task.isCancelled else { return }
             guard let self else { return }
             guard self.currentRoomId == roomId else { return }

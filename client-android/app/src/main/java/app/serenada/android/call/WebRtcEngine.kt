@@ -557,7 +557,9 @@ class WebRtcEngine(
     fun addIceCandidate(candidate: IceCandidate) {
         val pc = peerConnection ?: return
         if (!remoteDescriptionSet) {
-            pendingIceCandidates.add(candidate)
+            if (pendingIceCandidates.size < WebRtcResilienceConstants.ICE_CANDIDATE_BUFFER_MAX) {
+                pendingIceCandidates.add(candidate)
+            }
             return
         }
         pc.addIceCandidate(candidate)

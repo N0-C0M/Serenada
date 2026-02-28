@@ -1,5 +1,6 @@
 import type { SignalingMessage } from '../types';
 import type { SignalingTransport, TransportHandlers, TransportKind } from './types';
+import { CONNECT_TIMEOUT_MS } from '../../../constants/webrtcResilience';
 
 const getHttpBaseUrl = () => {
     const wsUrl = import.meta.env.VITE_WS_URL;
@@ -28,12 +29,17 @@ export class SseTransport implements SignalingTransport {
     private es: EventSource | null = null;
     private handlers: TransportHandlers;
     private open = false;
-    private sid = createSid();
+    private sid: string;
     private sseUrl = `${getHttpBaseUrl()}/sse`;
     private connectTimeout: number | null = null;
 
-    constructor(handlers: TransportHandlers) {
+    constructor(handlers: TransportHandlers, options?: { sid?: string }) {
         this.handlers = handlers;
+        this.sid = options?.sid || createSid();
+    }
+
+    getSessionId(): string {
+        return this.sid;
     }
 
     private clearConnectTimeout() {
@@ -41,6 +47,12 @@ export class SseTransport implements SignalingTransport {
             window.clearTimeout(this.connectTimeout);
             this.connectTimeout = null;
         }
+    }
+
+    private detachEventSourceHandlers(es: EventSource) {
+        es.onopen = null;
+        es.onerror = null;
+        es.onmessage = null;
     }
 
     connect() {
@@ -55,13 +67,13 @@ export class SseTransport implements SignalingTransport {
 
         this.connectTimeout = window.setTimeout(() => {
             if (this.es && this.es.readyState !== EventSource.OPEN) {
-                console.warn('[SSE] Connection timeout after 2s');
+                console.warn(`[SSE] Connection timeout after ${CONNECT_TIMEOUT_MS}ms`);
                 this.es.close();
                 this.es = null;
                 this.open = false;
                 this.handlers.onClose('timeout');
             }
-        }, 2000);
+        }, CONNECT_TIMEOUT_MS);
 
         this.es.onopen = () => {
             this.clearConnectTimeout();
@@ -90,11 +102,25 @@ export class SseTransport implements SignalingTransport {
 
     close() {
         this.clearConnectTimeout();
-        if (this.es) {
-            this.es.close();
-            this.es = null;
+        const es = this.es;
+        this.es = null;
+        if (es) {
+            this.detachEventSourceHandlers(es);
+            es.close();
         }
         this.open = false;
+    }
+
+    forceClose(reason: string) {
+        this.clearConnectTimeout();
+        const es = this.es;
+        this.es = null;
+        if (es) {
+            this.detachEventSourceHandlers(es);
+            es.close();
+        }
+        this.open = false;
+        this.handlers.onClose(reason);
     }
 
     isOpen() {
