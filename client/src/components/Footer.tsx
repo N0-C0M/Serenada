@@ -93,7 +93,7 @@ const Footer: React.FC = () => {
                     rel="noopener noreferrer"
                     className="footer-link"
                 >
-                    Поддержать нас
+                    Support us
                 </a>
 
                 {!isStandalone && (
