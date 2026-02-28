@@ -87,6 +87,15 @@ const Footer: React.FC = () => {
                     {t('footer_device_check')}
                 </a>
 
+                <a
+                    href="https://www.donationalerts.com/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="footer-link"
+                >
+                    Поддержать нас
+                </a>
+
                 {!isStandalone && (
                     <button onClick={handleInstall} className="footer-link">
                         <Download className="icon" />
