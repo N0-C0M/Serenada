@@ -15,6 +15,7 @@ import android.view.TextureView
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
+import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -114,6 +115,15 @@ fun CallScreen(
     attachRemoteSink: (VideoSink) -> Unit,
     detachRemoteSink: (VideoSink) -> Unit
 ) {
+    // Keep the screen on for the duration of the call
+    val activity = LocalContext.current as? Activity
+    DisposableEffect(Unit) {
+        activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose {
+            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
     var areControlsVisible by remember { mutableStateOf(true) }
     var isLocalLarge by rememberSaveable { mutableStateOf(false) }
     var remoteVideoFitCover by rememberSaveable { mutableStateOf(true) }
