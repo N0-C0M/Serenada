@@ -13,8 +13,8 @@ Native Android (Kotlin) client for Serenada 1:1 WebRTC calls. This app mirrors t
 - Call-scoped audio session management (`MODE_IN_COMMUNICATION` + audio focus request / restore on hangup), with route priority `Bluetooth headset -> proximity earpiece -> speaker` during active calls
 - Proximity sensor integration for call ergonomics: when the phone is against the ear, audio switches to earpiece and local camera video is paused until the phone is moved away (Bluetooth headset route takes precedence)
 - WebRTC audio path configured with `JavaAudioDeviceModule` (`VOICE_COMMUNICATION`, hardware AEC/NS, low-latency path)
-- Recent calls on home (max 3, deduped) with live room occupancy status and long-press remove
-- Saved rooms with custom names, quick join, rename/remove actions, and configurable position above/below recent calls
+- Recent calls on home (max 3, deduped) with live room occupancy status, saved-room name subtitle when matched, and icon-based quick actions
+- Saved rooms with custom names, quick join, share/rename/remove actions, and configurable position above/below recent calls
 - Settings flow to create shareable saved-room links; opening such a link in the app adds the room with the creator-defined name and uses per-room host overrides for non-default hosts
 - Deep links for `https://serenada.app/call/*`
 - Foreground service to keep active calls running in the background

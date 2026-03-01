@@ -3,6 +3,7 @@ package app.serenada.android.ui
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -14,7 +15,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -28,7 +31,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.VideoCall
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -67,11 +74,13 @@ import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.serenada.android.R
 import app.serenada.android.data.RecentCall
 import app.serenada.android.data.SavedRoom
+import app.serenada.android.data.SettingsStore
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -206,6 +215,13 @@ fun JoinScreen(
                             saveDialogRoomId = roomId
                             saveDialogName = savedRoomNameById[roomId].orEmpty()
                         },
+                        onShareSavedRoom = { room ->
+                            shareText(
+                                context = context,
+                                text = buildSavedRoomShareLink(room),
+                                chooserTitle = context.getString(R.string.settings_saved_rooms_share_link_chooser)
+                            )
+                        },
                         onRemoveSavedRoom = { roomId ->
                             if (removingSavedRoomIds.contains(roomId)) return@SavedRoomsSection
                             removingSavedRoomIds.add(roomId)
@@ -274,6 +290,13 @@ fun JoinScreen(
                         onRenameSavedRoom = { roomId ->
                             saveDialogRoomId = roomId
                             saveDialogName = savedRoomNameById[roomId].orEmpty()
+                        },
+                        onShareSavedRoom = { room ->
+                            shareText(
+                                context = context,
+                                text = buildSavedRoomShareLink(room),
+                                chooserTitle = context.getString(R.string.settings_saved_rooms_share_link_chooser)
+                            )
                         },
                         onRemoveSavedRoom = { roomId ->
                             if (removingSavedRoomIds.contains(roomId)) return@SavedRoomsSection
@@ -427,7 +450,7 @@ private fun RecentCallsSection(
                             count = roomStatuses[call.roomId] ?: 0,
                             enabled = !isBusy && !isRemoving,
                             atText = atText,
-                            isSaved = savedRoomNameById.containsKey(call.roomId),
+                            savedRoomName = savedRoomNameById[call.roomId],
                             onClick = { onJoinRecentCall(call.roomId) },
                             onSave = { onSaveRecentCall(call.roomId) },
                             onRemove = { onRemoveRecentCall(call.roomId) }
@@ -454,6 +477,7 @@ private fun SavedRoomsSection(
     onCreateRoom: () -> Unit,
     onJoinSavedRoom: (SavedRoom) -> Unit,
     onRenameSavedRoom: (String) -> Unit,
+    onShareSavedRoom: (SavedRoom) -> Unit,
     onRemoveSavedRoom: (String) -> Unit
 ) {
     val lastJoinedLabel = stringResource(R.string.saved_rooms_last_joined)
@@ -510,6 +534,7 @@ private fun SavedRoomsSection(
                                 enabled = !isBusy && !isRemoving,
                                 onClick = { onJoinSavedRoom(room) },
                                 onRename = { onRenameSavedRoom(room.roomId) },
+                                onShare = { onShareSavedRoom(room) },
                                 onRemove = { onRemoveSavedRoom(room.roomId) }
                             )
                             if (index < rooms.lastIndex) {
@@ -533,14 +558,18 @@ private fun RecentCallRow(
     count: Int,
     enabled: Boolean,
     atText: String,
-    isSaved: Boolean,
+    savedRoomName: String?,
     onClick: () -> Unit,
     onSave: () -> Unit,
     onRemove: () -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
+    val hasSavedRoom = !savedRoomName.isNullOrBlank()
+    val destructiveColor = MaterialTheme.colorScheme.error
+    val menuWidth = 252.dp
 
-    Box(modifier = Modifier.fillMaxWidth()) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val centeredMenuOffset = DpOffset(x = (maxWidth - menuWidth) / 2, y = 0.dp)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -549,33 +578,61 @@ private fun RecentCallRow(
                     onClick = onClick,
                     onLongClick = { menuExpanded = true }
                 )
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .padding(horizontal = 16.dp, vertical = 11.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            StatusDot(count = count)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = formatDateTime(call.startTime, atText),
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1
+                )
+                if (hasSavedRoom) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = savedRoomName.orEmpty(),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                }
+            }
             Spacer(modifier = Modifier.width(12.dp))
-            Text(
-                text = formatDateTime(call.startTime, atText),
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Spacer(modifier = Modifier.width(12.dp))
-            Text(
-                text = formatDuration(call.durationSeconds),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = formatDuration(call.durationSeconds),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (count > 0) {
+                    Spacer(modifier = Modifier.width(10.dp))
+                    StatusDot(count = count)
+                }
+            }
         }
 
         DropdownMenu(
             expanded = menuExpanded,
-            onDismissRequest = { menuExpanded = false }
+            onDismissRequest = { menuExpanded = false },
+            modifier = Modifier.width(menuWidth),
+            offset = centeredMenuOffset,
+            shape = RoundedCornerShape(14.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.98f),
+            tonalElevation = 16.dp,
+            shadowElevation = 20.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
         ) {
             DropdownMenuItem(
                 text = {
                     Text(
-                        if (isSaved) stringResource(R.string.saved_rooms_rename)
+                        if (hasSavedRoom) stringResource(R.string.saved_rooms_rename)
                         else stringResource(R.string.saved_rooms_save)
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = if (hasSavedRoom) Icons.Default.Edit else Icons.Default.Save,
+                        contentDescription = null
                     )
                 },
                 onClick = {
@@ -584,7 +641,19 @@ private fun RecentCallRow(
                 }
             )
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.recent_calls_remove)) },
+                text = {
+                    Text(
+                        text = stringResource(R.string.recent_calls_remove),
+                        color = destructiveColor
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = null,
+                        tint = destructiveColor
+                    )
+                },
                 onClick = {
                     menuExpanded = false
                     onRemove()
@@ -603,10 +672,14 @@ private fun SavedRoomRow(
     enabled: Boolean,
     onClick: () -> Unit,
     onRename: () -> Unit,
+    onShare: () -> Unit,
     onRemove: () -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
-    Box(modifier = Modifier.fillMaxWidth()) {
+    val destructiveColor = MaterialTheme.colorScheme.error
+    val menuWidth = 252.dp
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val centeredMenuOffset = DpOffset(x = (maxWidth - menuWidth) / 2, y = 0.dp)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -615,11 +688,9 @@ private fun SavedRoomRow(
                     onClick = onClick,
                     onLongClick = { menuExpanded = true }
                 )
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .padding(horizontal = 16.dp, vertical = 11.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            StatusDot(count = count)
-            Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = room.name,
@@ -632,21 +703,63 @@ private fun SavedRoomRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            Spacer(modifier = Modifier.width(12.dp))
+            if (count > 0) {
+                StatusDot(count = count)
+            }
         }
 
         DropdownMenu(
             expanded = menuExpanded,
-            onDismissRequest = { menuExpanded = false }
+            onDismissRequest = { menuExpanded = false },
+            modifier = Modifier.width(menuWidth),
+            offset = centeredMenuOffset,
+            shape = RoundedCornerShape(14.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.98f),
+            tonalElevation = 16.dp,
+            shadowElevation = 20.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
         ) {
             DropdownMenuItem(
+                text = { Text(stringResource(R.string.settings_saved_rooms_share_link_chooser)) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = null
+                    )
+                },
+                onClick = {
+                    menuExpanded = false
+                    onShare()
+                }
+            )
+            DropdownMenuItem(
                 text = { Text(stringResource(R.string.saved_rooms_rename)) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = null
+                    )
+                },
                 onClick = {
                     menuExpanded = false
                     onRename()
                 }
             )
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.saved_rooms_remove)) },
+                text = {
+                    Text(
+                        text = stringResource(R.string.saved_rooms_remove),
+                        color = destructiveColor
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = null,
+                        tint = destructiveColor
+                    )
+                },
                 onClick = {
                     menuExpanded = false
                     onRemove()
@@ -796,12 +909,8 @@ private fun CreateRoomDialog(
 
 @Composable
 private fun StatusDot(count: Int) {
-    val color =
-        when {
-            count == 1 -> Color(0xFF3FB950)
-            count >= 2 -> Color(0xFFD29922)
-            else -> Color.Transparent
-        }
+    if (count < 1) return
+    val color = if (count == 1) Color(0xFF3FB950) else Color(0xFFD29922)
     Box(
         modifier = Modifier
             .size(8.dp)
@@ -839,6 +948,24 @@ private fun formatLastJoined(timestamp: Long?, lastJoinedLabel: String, neverJoi
         .withLocale(locale)
         .format(zonedDateTime)
     return String.format(locale, lastJoinedLabel, formatted)
+}
+
+private fun buildSavedRoomShareLink(room: SavedRoom): String {
+    val resolvedHost = room.host?.trim().orEmpty().ifBlank { SettingsStore.DEFAULT_HOST }
+    val appLinkHost = if (resolvedHost == SettingsStore.HOST_RU) {
+        SettingsStore.HOST_RU
+    } else {
+        SettingsStore.DEFAULT_HOST
+    }
+    return Uri.Builder()
+        .scheme("https")
+        .authority(appLinkHost)
+        .appendPath("call")
+        .appendPath(room.roomId)
+        .appendQueryParameter("host", resolvedHost)
+        .appendQueryParameter("name", room.name)
+        .build()
+        .toString()
 }
 
 private fun shareText(context: Context, text: String, chooserTitle: String) {
