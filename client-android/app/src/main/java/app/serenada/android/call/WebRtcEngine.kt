@@ -189,7 +189,7 @@ class WebRtcEngine(
     private var compositeDisabledAfterFailure = false
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    private var localSink: VideoSink? = null
+    private val localSinks = LinkedHashSet<VideoSink>()
     private var remoteSink: VideoSink? = null
     private var remoteVideoTrack: VideoTrack? = null
     private val remoteBlackFrameAnalyzer = RemoteBlackFrameAnalyzer()
@@ -332,7 +332,7 @@ class WebRtcEngine(
         }
         localVideoTrack = peerConnectionFactory.createVideoTrack("ARDAMSv0", videoSource)
         localVideoTrack?.setEnabled(true)
-        localSink?.let { sink ->
+        localSinks.forEach { sink ->
             localVideoTrack?.addSink(sink)
         }
         createPeerConnectionIfReady()
@@ -384,6 +384,7 @@ class WebRtcEngine(
         released = true
         stopLocalMedia()
         closePeerConnection()
+        localSinks.clear()
         runCatching { peerConnectionFactory.dispose() }
         runCatching { audioDeviceModule.release() }
         runCatching { eglBase.release() }
@@ -730,17 +731,13 @@ class WebRtcEngine(
     }
 
     fun attachLocalSink(sink: VideoSink) {
-        if (localSink === sink) return
-        localSink?.let { previous -> localVideoTrack?.removeSink(previous) }
-        localSink = sink
+        if (!localSinks.add(sink)) return
         localVideoTrack?.addSink(sink)
     }
 
     fun detachLocalSink(sink: VideoSink) {
         localVideoTrack?.removeSink(sink)
-        if (localSink === sink) {
-            localSink = null
-        }
+        localSinks.remove(sink)
     }
 
     fun attachRemoteSink(sink: VideoSink) {
