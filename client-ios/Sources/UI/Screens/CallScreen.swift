@@ -2,17 +2,9 @@ import SwiftUI
 
 func shouldShowCallStatusLabel(
     phase: CallPhase,
-    isSignalingConnected: Bool,
-    iceConnectionState: String?,
-    connectionState: String?
+    connectionStatus: ConnectionStatus
 ) -> Bool {
-    guard phase == .inCall else { return false }
-
-    return !isSignalingConnected ||
-        iceConnectionState == "DISCONNECTED" ||
-        iceConnectionState == "FAILED" ||
-        connectionState == "DISCONNECTED" ||
-        connectionState == "FAILED"
+    phase == .inCall && connectionStatus != .connected
 }
 
 func shouldShowWaitingOverlay(phase: CallPhase) -> Bool {
@@ -85,7 +77,7 @@ func buildDebugPanelSections(uiState: CallUiState) -> [DebugPanelSection] {
             return .bad
         }
     }()
-    let reconnectStatus: DebugStatus = uiState.isReconnecting ? .bad : .good
+    let reconnectStatus: DebugStatus = uiState.connectionStatus == .connected ? .good : .bad
 
     let transportPathStatus: DebugStatus = {
         guard let path = stats.transportPath else { return .na }
@@ -120,7 +112,7 @@ func buildDebugPanelSections(uiState: CallUiState) -> [DebugPanelSection] {
                 DebugPanelMetric(label: "ICE / PC", value: "\(normalizeState(uiState.iceConnectionState)) / \(normalizeState(uiState.connectionState))", status: worstStatus(iceStatus, pcStatus)),
                 DebugPanelMetric(label: "SDP", value: normalizeState(uiState.signalingState), status: normalizeState(uiState.signalingState) == "stable" ? .good : .warn),
                 DebugPanelMetric(label: "Room", value: uiState.participantCount > 0 ? "\(uiState.participantCount) participants" : "none", status: uiState.participantCount > 0 ? .good : .warn),
-                DebugPanelMetric(label: "Reconnecting", value: uiState.isReconnecting ? "yes" : "no", status: reconnectStatus)
+                DebugPanelMetric(label: "Reconnecting", value: uiState.connectionStatus == .connected ? "no" : "yes", status: reconnectStatus)
             ]
         ),
         DebugPanelSection(
@@ -244,6 +236,7 @@ struct CallScreen: View {
     @State private var showDebugPanel = false
     @State private var lastDebugTapAt: Date?
     @State private var lastMagnificationValue: CGFloat = 1
+    @State private var showRecoveringBadge = false
 
     var body: some View {
         let showLocalAsPrimarySurface = shouldRenderLocalAsPrimarySurface(
@@ -300,6 +293,18 @@ struct CallScreen: View {
                 wereControlsLastHiddenByAutoHide = true
                 areControlsVisible = false
             }
+        }
+        .onChange(of: uiState.connectionStatus) { status in
+            if status != .recovering {
+                showRecoveringBadge = false
+            }
+        }
+        .task(id: uiState.connectionStatus == .recovering && uiState.phase == .inCall) {
+            guard uiState.connectionStatus == .recovering, uiState.phase == .inCall else { return }
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            guard !Task.isCancelled else { return }
+            guard uiState.connectionStatus == .recovering, uiState.phase == .inCall else { return }
+            showRecoveringBadge = true
         }
         .sheet(isPresented: $showShareSheet) {
             ActivityView(items: ["https://\(serverHost)/call/\(roomId)"])
@@ -464,19 +469,23 @@ struct CallScreen: View {
     private var topStatus: some View {
         VStack(spacing: 8) {
             HStack(spacing: 8) {
-                if shouldShowCallStatusLabel(
-                    phase: uiState.phase,
-                    isSignalingConnected: uiState.isSignalingConnected,
-                    iceConnectionState: uiState.iceConnectionState,
-                    connectionState: uiState.connectionState
-                ) {
-                    Text(statusLabel)
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Color.black.opacity(0.45))
-                        .clipShape(Capsule())
+                if uiState.phase == .inCall &&
+                    (uiState.connectionStatus == .retrying || showRecoveringBadge) {
+                    HStack(spacing: 8) {
+                        Text(L10n.callReconnecting)
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.white)
+
+                        if uiState.connectionStatus == .retrying {
+                            Text(L10n.callTakingLongerThanUsual)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.white.opacity(0.92))
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.black.opacity(0.45))
+                    .clipShape(Capsule())
                 }
 
                 Spacer()
@@ -682,10 +691,6 @@ struct CallScreen: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabel)
-    }
-
-    private var statusLabel: String {
-        L10n.callReconnecting
     }
 
     private var isLandscape: Bool {
