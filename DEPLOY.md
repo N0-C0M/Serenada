@@ -147,6 +147,8 @@ Set at least:
 - `TEST_REMOTE_DIR` (must differ from `REMOTE_DIR`, e.g. `/opt/serenada-test`)
 - `TEST_CERTBOT_EMAIL` (required only when the test certificate is missing)
 
+`deploy-test.sh` loads `.env.production` first and then applies overrides from `.env.test.production`.
+
 Optional overrides:
 - `TEST_COMPOSE_PROJECT` (default `serenada-test`)
 - `TEST_APP_HTTP_PORT` (default `18080`, bound to `127.0.0.1`)
