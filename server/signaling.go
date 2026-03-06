@@ -15,7 +15,10 @@ import (
 	"serenada/server/internal/stats"
 )
 
-const maxMessageSize = 65536 // 64KB
+const (
+	maxMessageSize      = 65536 // 64KB
+	maxRoomParticipants = 10
+)
 
 // TURN token TTL: 30 minutes. Clients proactively refresh at 80% of TTL.
 const turnTokenTTL = 30 * time.Minute
@@ -329,7 +332,7 @@ func (h *Hub) handleJoin(c *Client, msg Message) {
 	}
 
 	// Room full check (after ghost eviction)
-	if len(room.Participants) >= 2 {
+	if len(room.Participants) >= maxRoomParticipants {
 		room.mu.Unlock()
 		log.Printf("[JOIN] Room %s is full", rid)
 		c.sendError(rid, "ROOM_FULL", "Room is full")
@@ -341,7 +344,7 @@ func (h *Hub) handleJoin(c *Client, msg Message) {
 		room.mu.Unlock()
 		h.cleanupEvictedClient(ghostToEvict)
 		room.mu.Lock()
-		if len(room.Participants) >= 2 {
+		if len(room.Participants) >= maxRoomParticipants {
 			room.mu.Unlock()
 			log.Printf("[JOIN] Room %s is full after ghost cleanup", rid)
 			c.sendError(rid, "ROOM_FULL", "Room is full")

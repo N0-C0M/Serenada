@@ -1,16 +1,16 @@
 # Serenada Signaling Protocol (WebSocket + SSE) — v1
 
-**Purpose:** Define the signaling protocol used by the Serenada SPA and backend signaling service to establish and manage **1:1 WebRTC calls** (rooms) via **WebSocket or SSE**.
+**Purpose:** Define the signaling protocol used by the Serenada SPA and backend signaling service to establish and manage **WebRTC calls** (rooms) via **WebSocket or SSE**, including web mesh rooms up to 10 participants.
 
 **Scope:**
 - Room join/leave
 - Host-designation and host “end call” for all participants
 - SDP offer/answer exchange
 - ICE candidate exchange (trickle ICE)
-- Room capacity enforcement (max 2)
+- Room capacity enforcement (max 10)
 - Basic error handling
 
-**Out of scope:** analytics, auth accounts, multi-party calling, chat, recording, presence across devices
+**Out of scope:** analytics, auth accounts, chat, recording, presence across devices, SFU/MCU media forwarding
 
 ---
 
@@ -89,10 +89,10 @@ Host privileges:
 ## 3. Room model
 
 - A **room** is identified by `rid` and exists only while participants are connected (deleted when empty or when host ends the room).
-- A **call session** is the live WebRTC connection between up to two participants in that room.
-- **Capacity:** max **2** participants connected at once.
+- A **call session** is the live WebRTC mesh between participants in that room.
+- **Capacity:** max **10** participants connected at once.
 
-If a third participant tries to join:
+If an 11th participant tries to join:
 - Server responds with `error` (code: `ROOM_FULL`) and must not add them to the room.
 
 ---
@@ -121,7 +121,7 @@ Join a room.
 **Server behavior**
 - Validate `rid` as a signed 27-character room token (generated via `/api/room-id`).
 - If room is empty, make this participant host.
-- If room already has 2 participants, reject with `ROOM_FULL` (unless `reconnectCid` matches a ghost session, in which case the server evicts the ghost and reuses the CID).
+- If room already has 10 participants, reject with `ROOM_FULL` (unless `reconnectCid` matches a ghost session, in which case the server evicts the ghost and reuses the CID).
 - On success, respond with `joined`.
 - Push notifications are **not** triggered on join. Instead, clients send a separate `POST /api/push/notify` request after receiving `joined` (see push-notifications.md).
 
@@ -383,7 +383,7 @@ Standard error message.
 **Error codes**
 - `BAD_REQUEST` — invalid JSON, missing required fields, invalid types
 - `UNSUPPORTED_VERSION` — `v` not supported
-- `ROOM_FULL` — capacity exceeded (2 participants)
+- `ROOM_FULL` — capacity exceeded (10 participants)
 - `NOT_HOST` — non-host attempted `end_room`
 - `SERVER_NOT_CONFIGURED` — room ID secret missing on server
 - `INVALID_ROOM_ID` — room ID failed validation
@@ -452,31 +452,29 @@ Pushed whenever a watched room's participant count changes.
 
 ---
 
-## 5. WebRTC negotiation rules (1:1)
+## 5. WebRTC negotiation rules (mesh up to 10)
 
 ### 5.1 Roles for offer/answer
-To avoid “glare” (both sides sending offers), assign roles deterministically:
+To avoid glare (both sides sending offers) in mesh rooms, assign offerer roles per peer pair deterministically.
 
-- **Host is the offerer** when a second participant joins.
-- Non-host is the answerer.
-
-**Rule:**
-- When a client receives `room_state` showing exactly 2 participants:
-  - If you are host: create and send `offer` to the other participant.
-  - If you are not host: wait for `offer` and respond with `answer`.
+**Rule (pairwise initiator selection):**
+- For each remote `cid` in the room, compare local `cid` and remote `cid` lexicographically.
+- If `localCid < remoteCid`, local side acts as offerer for that pair and sends `offer` to `to=remoteCid`.
+- Otherwise, local side waits for `offer` from that peer and responds with `answer`.
+- Clients should include `to` for `offer`/`answer`/`ice` in mesh mode.
 
 ### 5.2 Local media
 - Client may attempt to start local media before join for preview; browsers may require user gesture.
 - Add tracks to `RTCPeerConnection` before creating offer/answer.
 
 ### 5.3 Trickle ICE
-- Both sides send `ice` as candidates are discovered.
-- Both sides add received candidates promptly.
+- Each peer pair exchanges `ice` candidates independently.
+- Clients should route incoming candidates by `payload.from` to the correct `RTCPeerConnection`.
 
 ### 5.4 Disconnect / remote leave
-- If remote leaves (room_state goes to 1 participant) or a `room_ended` is received:
-  - Close RTCPeerConnection and clear remote media
-  - Keep local media running while waiting (stop when user leaves)
+- If a peer leaves the room, close only that peer's `RTCPeerConnection` and clear that peer's remote media.
+- If no peers remain (room_state goes to 1 participant), keep local media running while waiting (stop when user leaves).
+- If `room_ended` is received, close all peer connections and reset room UI state.
 
 ---
 
@@ -511,8 +509,8 @@ For `offer`, `answer`, `ice`:
 - Do not persist SDP/ICE long-term; keep in-memory only.
 
 ### 7.3 Capacity enforcement
-- Refuse third join with `ROOM_FULL`.
-- Never allow more than 2 participants present concurrently.
+- Refuse 11th join with `ROOM_FULL`.
+- Never allow more than 10 participants present concurrently.
 
 ### 7.4 Cleanup
 - On socket disconnect: treat as `leave`.
@@ -596,7 +594,7 @@ Triggers a room invite push notification to subscribers of the room.
 → **SocketConnected**
 → send `join`
 → **Joined (Waiting)** (1 participant)
-→ if 2 participants & host: create offer → **Negotiating**
+→ for each peer where `localCid < peerCid`: create offer -> **Negotiating**
 → if receive offer: set remote, create answer → **Negotiating**
 → when ICE connected: **InCall**
 → on remote leave: **Joined (Waiting)**
@@ -610,7 +608,7 @@ Triggers a room invite push notification to subscribers of the room.
 ### Client
 - [ ] Connect WS/SSE, send `join` on call page
 - [ ] Show “Join Call” and only call `getUserMedia` after user gesture
-- [ ] Implement host-as-offerer rule to avoid glare
+- [ ] Implement deterministic pairwise offerer rule (`localCid < peerCid`) to avoid glare
 - [ ] Trickle ICE send/receive with queueing before remote SDP is set
 - [ ] Handle `room_state`, `room_ended`, and `error`
 - [ ] Stop local tracks on explicit leave
@@ -618,8 +616,9 @@ Triggers a room invite push notification to subscribers of the room.
 ### Backend
 - [ ] Accept WS/SSE, parse JSON, validate schema
 - [ ] Create room on first join
-- [ ] Enforce max 2 participants
+- [ ] Enforce max 10 participants
 - [ ] Assign hostCid and transfer host if host leaves
 - [ ] Relay offer/answer/ice to correct peer
 - [ ] Broadcast `room_state` updates
 - [ ] Implement `end_room` and broadcast `room_ended`
+

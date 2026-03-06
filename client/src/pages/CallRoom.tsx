@@ -13,6 +13,25 @@ import { saveRoom, markRoomJoined, type SaveRoomResult } from '../utils/savedRoo
 import { buildDebugPanelSections, useRealtimeCallStats } from './callDiagnostics';
 import { SNAPSHOT_PREPARE_TIMEOUT_MS } from '../constants/webrtcResilience';
 
+const RemoteStripVideo: React.FC<{ stream: MediaStream }> = ({ stream }) => {
+    const videoRef = useRef<HTMLVideoElement>(null);
+
+    useEffect(() => {
+        if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+        }
+    }, [stream]);
+
+    return (
+        <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            className="video-remote-strip-item-video"
+        />
+    );
+};
+
 function urlBase64ToUint8Array(base64String: string) {
     const padding = '='.repeat((4 - base64String.length % 4) % 4);
     const base64 = (base64String + padding)
@@ -222,7 +241,7 @@ const CallRoom: React.FC = () => {
         facingMode,
         hasMultipleCameras,
         localStream,
-        remoteStream,
+        remoteStreams,
         peerConnection,
         iceConnectionState,
         connectionState,
@@ -421,6 +440,9 @@ const CallRoom: React.FC = () => {
     };
     const shouldMirrorLocalVideo = facingMode === 'user' && !isScreenSharing;
     const showScreenShareControl = canScreenShare && !isMobileBrowser();
+    const remoteEntries = Object.entries(remoteStreams).sort(([leftCid], [rightCid]) => leftCid.localeCompare(rightCid));
+    const primaryRemoteStream = remoteEntries.length > 0 ? remoteEntries[0][1] : null;
+    const extraRemoteEntries = remoteEntries.slice(1);
 
     const exitFullscreenIfActive = () => {
         const doc = document as Document & {
@@ -441,10 +463,10 @@ const CallRoom: React.FC = () => {
     }, [localStream, hasJoined]);
 
     useEffect(() => {
-        if (remoteVideoRef.current && remoteStream) {
-            remoteVideoRef.current.srcObject = remoteStream;
+        if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = primaryRemoteStream;
         }
-    }, [remoteStream]);
+    }, [primaryRemoteStream]);
 
     useEffect(() => {
         const clearWaitingTimer = () => {
@@ -461,7 +483,7 @@ const CallRoom: React.FC = () => {
             return clearWaitingTimer;
         }
 
-        if (remoteStream) {
+        if (primaryRemoteStream) {
             setShowWaiting(false);
             return clearWaitingTimer;
         }
@@ -476,7 +498,7 @@ const CallRoom: React.FC = () => {
 
         setShowWaiting(true);
         return clearWaitingTimer;
-    }, [hasJoined, remoteStream, showReconnecting]);
+    }, [hasJoined, primaryRemoteStream, showReconnecting]);
 
     // Handle room state changes
     useEffect(() => {
@@ -932,7 +954,7 @@ const CallRoom: React.FC = () => {
                     style={{ objectFit: remoteVideoFit }}
                 />
 
-                {remoteStream && (
+                {primaryRemoteStream && (
                     <button
                         className="btn-zoom"
                         onPointerUp={toggleRemoteVideoFit}
@@ -940,6 +962,15 @@ const CallRoom: React.FC = () => {
                     >
                         {remoteVideoFit === 'cover' ? <Minimize2 /> : <Maximize2 />}
                     </button>
+                )}
+                {extraRemoteEntries.length > 0 && (
+                    <div className="video-remote-strip">
+                        {extraRemoteEntries.map(([peerCid, stream]) => (
+                            <div key={peerCid} className="video-remote-strip-item">
+                                <RemoteStripVideo stream={stream} />
+                            </div>
+                        ))}
+                    </div>
                 )}
                 {showWaiting && (
                     <div className="waiting-message">

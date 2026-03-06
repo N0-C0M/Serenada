@@ -93,12 +93,8 @@ const Footer: React.FC = () => {
                     rel="noopener noreferrer"
                     className="footer-link"
                 >
-<<<<<<< HEAD
-                    Support us
-=======
                     <Heart className="icon" />
                     {t('footer_support_us')}
->>>>>>> ea95291cf406b489d794af1bc05176582bb79d26
                 </a>
 
                 {!isStandalone && (

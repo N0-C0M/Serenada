@@ -16,6 +16,8 @@ interface RecentCallsProps {
     onCallUpdate?: () => void;
 }
 
+const ROOM_FULL_THRESHOLD = 10;
+
 const RecentCalls: React.FC<RecentCallsProps> = ({ calls, roomStatuses, savedRooms, onCallUpdate }) => {
     const { t, i18n } = useTranslation();
     const navigate = useNavigate();
@@ -114,8 +116,8 @@ const RecentCalls: React.FC<RecentCallsProps> = ({ calls, roomStatuses, savedRoo
         const count = roomStatuses[roomId] || 0;
         if (count === 0) return null;
 
-        const statusClass = count === 1 ? 'status-waiting' : 'status-full';
-        const title = count === 1 ? t('someone_waiting') : t('room_full');
+        const statusClass = count >= ROOM_FULL_THRESHOLD ? 'status-full' : 'status-waiting';
+        const title = count >= ROOM_FULL_THRESHOLD ? t('room_full') : t('someone_waiting');
 
         return (
             <div className={`status-dot ${statusClass}`} title={title} />

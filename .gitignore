@@ -1,10 +1,13 @@
 # Environment variables
 .env
 .env.production
+.env.test.production
 .env.local
 
 # Temp files
 nginx/nginx.prod.conf
+nginx/nginx.test.conf
+nginx/conf.d/test-proxy.extra
 
 # Node
 node_modules/

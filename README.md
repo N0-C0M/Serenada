@@ -1,12 +1,13 @@
 # Serenada
 
-A simple, privacy-focused 1:1 video calling application built with WebRTC. No accounts, no tracking, just instant video calls.
+A simple, privacy-focused video calling application built with WebRTC. No accounts, no tracking, just instant video calls.
 
 [![License](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](LICENSE)
 
 ## Features
 
-- **Instant calls** – One tap to start, share a link to connect
+- **Instant calls** - One tap to start, share a link to connect
+- **Web mesh rooms (up to 10 participants)** - Browser clients connect peer-to-peer in full mesh with directed signaling.
 - **No accounts required** – Just open and call
 - **Privacy-first** – No tracking, no analytics, end-to-end encrypted peer-to-peer video
 - **Resilient signaling** – WebSocket with SSE fallback when WS is blocked
@@ -106,6 +107,7 @@ Note: iOS Simulator can run signaling and call flow, but local camera preview re
 ### Production Deployment
 
 See [DEPLOY.md](DEPLOY.md) for detailed self-hosting instructions.
+For parallel test rollout on `test.serenada-app.ru` (with separate non-production ports), use `./deploy-test.sh` as documented in `DEPLOY.md`.
 
 Quick setup script (downloads, installs dependencies, and provisions the stack):
 ```bash
@@ -176,6 +178,7 @@ Detailed request/timing sequence:
 - **Frontend**: React + TypeScript + Vite
 - **Backend**: Go (signaling server)
 - **Media**: WebRTC with STUN/TURN support via Coturn
+- **Topology (web)**: Full mesh up to 10 participants per room (`n*(n-1)/2` peer links)
 - **Deployment**: Docker Compose with Nginx reverse proxy
 
 ## Documentation
@@ -201,3 +204,4 @@ Detailed request/timing sequence:
 ## License
 
 This project is licensed under the BSD 3-Clause License. See [LICENSE](LICENSE) for details.
+

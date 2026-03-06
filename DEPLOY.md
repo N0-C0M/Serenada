@@ -134,6 +134,41 @@ From the project root on your local machine:
 
 If `secrets/service-account.json` exists in the repo root, `deploy.sh` also syncs it to `${REMOTE_DIR}/secrets/service-account.json` and injects `FCM_SERVICE_ACCOUNT_FILE=${REMOTE_DIR}/secrets/service-account.json` into the deployed `.env` (overriding any existing `FCM_SERVICE_ACCOUNT_FILE` / `FCM_SERVICE_ACCOUNT_JSON` entries for that deployment).
 
+### 4.1 Test Deployment (separate stack on `test.serenada-app.ru`)
+
+Use a separate env file with test-specific overrides:
+
+```bash
+cp .env.test.production.example .env.test.production
+```
+
+Set at least:
+- `TEST_DOMAIN` (default is `test.serenada-app.ru`)
+- `TEST_REMOTE_DIR` (must differ from `REMOTE_DIR`, e.g. `/opt/serenada-test`)
+- `TEST_CERTBOT_EMAIL` (required only when the test certificate is missing)
+
+Optional overrides:
+- `TEST_COMPOSE_PROJECT` (default `serenada-test`)
+- `TEST_APP_HTTP_PORT` (default `18080`, bound to `127.0.0.1`)
+- `TEST_STACK_HTTP_PORT` (default `18081`, bound to `127.0.0.1`)
+
+Deploy test stack:
+
+```bash
+./deploy-test.sh
+```
+
+What `deploy-test.sh` does:
+- Builds `client`
+- Deploys a dedicated compose project (`docker-compose.yml` + `docker-compose.test.yml`) into `TEST_REMOTE_DIR`
+- Starts test services on non-production ports (`18080/18081` by default)
+- Updates production nginx to proxy `TEST_DOMAIN` to the local test stack (`host.docker.internal:${TEST_STACK_HTTP_PORT}`)
+- Issues a Let's Encrypt certificate for `TEST_DOMAIN` via webroot (if needed)
+- Reloads production nginx
+
+This allows production and test versions to run simultaneously without port conflicts.
+By default, test stack ports are bound to `127.0.0.1`, so public traffic still enters only through the production nginx on `80/443`.
+
 ### 5. Android and iOS Deep Link Association Files
 
 Android deep links require `/.well-known/assetlinks.json` to be served from your domain. The file lives at:

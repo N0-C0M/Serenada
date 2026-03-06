@@ -242,6 +242,35 @@ body {
   background: black;
 }
 
+.video-remote-strip {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  z-index: 12;
+  width: min(42vw, 420px);
+  max-height: min(48vh, 420px);
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 8px;
+  overflow-y: auto;
+}
+
+.video-remote-strip-item {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+}
+
+.video-remote-strip-item-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 @media (min-width: 768px) {
 
   .video-local-container.pip,
@@ -251,6 +280,14 @@ body {
     /* Landscape on desktop */
     bottom: 100px;
     right: 32px;
+  }
+}
+
+@media (max-width: 767px) {
+  .video-remote-strip {
+    width: min(70vw, 320px);
+    max-height: min(44vh, 320px);
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
   }
 }
 
