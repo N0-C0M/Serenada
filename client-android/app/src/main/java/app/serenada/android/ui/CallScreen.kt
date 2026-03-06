@@ -15,6 +15,7 @@ import android.view.TextureView
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
+import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -31,6 +32,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
@@ -68,6 +70,7 @@ import androidx.compose.ui.zIndex
 import app.serenada.android.R
 import app.serenada.android.call.CallPhase
 import app.serenada.android.call.CallUiState
+import app.serenada.android.call.ConnectionStatus
 import app.serenada.android.call.LocalCameraMode
 import app.serenada.android.call.RealtimeCallStats
 import java.text.SimpleDateFormat
@@ -113,7 +116,18 @@ fun CallScreen(
     attachRemoteSink: (VideoSink) -> Unit,
     detachRemoteSink: (VideoSink) -> Unit
 ) {
+    // Keep the screen on for the duration of the call
+    val activity = LocalContext.current as? Activity
+    DisposableEffect(Unit) {
+        activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose {
+            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
     var areControlsVisible by remember { mutableStateOf(true) }
+    var isControlsAutoHideEnabled by remember { mutableStateOf(true) }
+    var wereControlsLastHiddenByAutoHide by remember { mutableStateOf(false) }
     var isLocalLarge by rememberSaveable { mutableStateOf(false) }
     var remoteVideoFitCover by rememberSaveable { mutableStateOf(true) }
     var lastFrontCameraState by remember { mutableStateOf(uiState.isFrontCamera) }
@@ -121,7 +135,7 @@ fun CallScreen(
     var remoteAspectRatio by remember { mutableStateOf<Float?>(null) }
     var showDebug by rememberSaveable { mutableStateOf(false) }
     var debugTapTimestampMs by remember { mutableStateOf(0L) }
-    var showReconnecting by remember { mutableStateOf(false) }
+    var showRecoveringBadge by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val localRenderer = remember { SurfaceViewRenderer(context) }
     val remoteRenderer = remember { SurfaceViewRenderer(context) }
@@ -212,31 +226,20 @@ fun CallScreen(
         }
     }
 
-    val isReconnecting =
-        remember(
-            uiState.iceConnectionState,
-            uiState.connectionState,
-            uiState.isSignalingConnected
-        ) {
-            val iceState = uiState.iceConnectionState
-            val connState = uiState.connectionState
-            !uiState.isSignalingConnected ||
-                    iceState == "DISCONNECTED" ||
-                    iceState == "FAILED" ||
-                    connState == "DISCONNECTED" ||
-                    connState == "FAILED"
-        }
-
-    LaunchedEffect(uiState.phase, isReconnecting) {
-        if (uiState.phase != CallPhase.InCall || !isReconnecting) {
-            showReconnecting = false
+    LaunchedEffect(uiState.phase, uiState.connectionStatus) {
+        if (uiState.phase != CallPhase.InCall || uiState.connectionStatus != ConnectionStatus.Recovering) {
+            showRecoveringBadge = false
             return@LaunchedEffect
         }
         delay(800)
-        if (uiState.phase == CallPhase.InCall && isReconnecting) {
-            showReconnecting = true
+        if (uiState.phase == CallPhase.InCall && uiState.connectionStatus == ConnectionStatus.Recovering) {
+            showRecoveringBadge = true
         }
     }
+
+    val showReconnectingBadge =
+        uiState.phase == CallPhase.InCall &&
+            (uiState.connectionStatus == ConnectionStatus.Retrying || showRecoveringBadge)
 
     val debugSections =
         remember(
@@ -247,7 +250,7 @@ fun CallScreen(
             uiState.signalingState,
             uiState.roomId,
             uiState.participantCount,
-            showReconnecting,
+            uiState.connectionStatus,
             uiState.realtimeCallStats
         ) {
             buildDebugPanelSections(
@@ -257,15 +260,29 @@ fun CallScreen(
                 connectionState = uiState.connectionState,
                 signalingState = uiState.signalingState,
                 roomParticipantCount = if (uiState.roomId != null) uiState.participantCount else null,
-                showReconnecting = showReconnecting,
+                showReconnecting = uiState.connectionStatus != ConnectionStatus.Connected,
                 realtimeStats = uiState.realtimeCallStats
             )
         }
 
+    val toggleControlsVisibility: () -> Unit = {
+        if (areControlsVisible) {
+            areControlsVisible = false
+            wereControlsLastHiddenByAutoHide = false
+        } else {
+            areControlsVisible = true
+            if (wereControlsLastHiddenByAutoHide) {
+                isControlsAutoHideEnabled = false
+                wereControlsLastHiddenByAutoHide = false
+            }
+        }
+    }
+
     // Auto-hide controls
-    LaunchedEffect(areControlsVisible, uiState.phase) {
-        if (areControlsVisible && uiState.phase == CallPhase.InCall) {
+    LaunchedEffect(areControlsVisible, uiState.phase, isControlsAutoHideEnabled) {
+        if (areControlsVisible && uiState.phase == CallPhase.InCall && isControlsAutoHideEnabled) {
             delay(8000)
+            wereControlsLastHiddenByAutoHide = true
             areControlsVisible = false
         }
     }
@@ -282,10 +299,12 @@ fun CallScreen(
 
     BoxWithConstraints(
         modifier =
-            Modifier.fillMaxSize().background(Color.Black).clickable(
+            Modifier.fillMaxSize().background(Color.Black)
+                .testTag("call.screen")
+                .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
-            ) { areControlsVisible = !areControlsVisible }
+            ) { toggleControlsVisibility() }
     ) {
         val controlsAnimationDuration = 320
         val showPip =
@@ -310,7 +329,7 @@ fun CallScreen(
             Modifier.fillMaxSize().clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
-            ) { areControlsVisible = !areControlsVisible }
+            ) { toggleControlsVisibility() }
         val debugPanelWidth = minOf(maxWidth * 0.92f, 430.dp)
         val debugPanelMaxHeight = (maxHeight - 140.dp).coerceAtLeast(120.dp)
 
@@ -524,18 +543,31 @@ fun CallScreen(
 
         // Reconnecting Indicator
         AnimatedVisibility(
-            visible = showReconnecting && uiState.phase == CallPhase.InCall,
+            visible = showReconnectingBadge,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.TopCenter).padding(top = 64.dp)
         ) {
             Surface(color = Color.Black.copy(alpha = 0.6f), shape = RoundedCornerShape(20.dp)) {
-                Text(
-                    text = stringResource(R.string.call_reconnecting),
-                    color = Color.White,
+                Column(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    fontSize = 14.sp
-                )
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.call_reconnecting),
+                        color = Color.White,
+                        fontSize = 14.sp
+                    )
+
+                    if (uiState.connectionStatus == ConnectionStatus.Retrying) {
+                        Text(
+                            text = stringResource(R.string.call_taking_longer_than_usual),
+                            color = Color.White.copy(alpha = 0.9f),
+                            fontSize = 12.sp
+                        )
+                    }
+                }
             }
         }
 
@@ -691,7 +723,8 @@ fun CallScreen(
                     ControlButton(
                         onClick = onEndCall,
                         icon = Icons.Default.CallEnd,
-                        backgroundColor = Color.Red
+                        backgroundColor = Color.Red,
+                        modifier = Modifier.testTag("call.endCall")
                     )
                 }
             }
@@ -1099,11 +1132,12 @@ private fun ControlButton(
     onClick: () -> Unit,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     backgroundColor: Color,
+    modifier: Modifier = Modifier,
     buttonSize: androidx.compose.ui.unit.Dp = 56.dp,
     iconSize: androidx.compose.ui.unit.Dp = 28.dp
 ) {
     Surface(
-        modifier = Modifier.size(buttonSize).clip(CircleShape).clickable { onClick() },
+        modifier = modifier.size(buttonSize).clip(CircleShape).clickable { onClick() },
         color = backgroundColor
     ) {
         Box(contentAlignment = Alignment.Center) {

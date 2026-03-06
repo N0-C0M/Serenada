@@ -3,6 +3,7 @@ package app.serenada.android.ui
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -14,13 +15,16 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -28,7 +32,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.VideoCall
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -61,16 +69,19 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.serenada.android.R
 import app.serenada.android.data.RecentCall
 import app.serenada.android.data.SavedRoom
+import app.serenada.android.data.SettingsStore
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -78,6 +89,8 @@ import java.time.format.FormatStyle
 import java.util.Locale
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+private val JoinSectionRowMinHeight = 48.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,10 +101,11 @@ fun JoinScreen(
     savedRooms: List<SavedRoom>,
     areSavedRoomsShownFirst: Boolean,
     roomStatuses: Map<String, Int>,
+    serverHost: String,
     onOpenJoinWithCode: () -> Unit,
     onOpenSettings: () -> Unit,
     onStartCall: () -> Unit,
-    onJoinRecentCall: (String) -> Unit,
+    onJoinRecentCall: (RecentCall) -> Unit,
     onJoinSavedRoom: (SavedRoom) -> Unit,
     onRemoveRecentCall: (String) -> Unit,
     onSaveRoom: (String, String) -> Unit,
@@ -132,6 +146,7 @@ fun JoinScreen(
     }
 
     Scaffold(
+        modifier = Modifier.testTag("join.screen"),
         topBar = {
             TopAppBar(
                 title = {
@@ -196,6 +211,7 @@ fun JoinScreen(
                     SavedRoomsSection(
                         rooms = savedRooms,
                         roomStatuses = roomStatuses,
+                        serverHost = serverHost,
                         removingRoomIds = removingSavedRoomIds.toSet(),
                         isBusy = isBusy,
                         onCreateRoom = { showCreateRoomDialog = true },
@@ -203,6 +219,13 @@ fun JoinScreen(
                         onRenameSavedRoom = { roomId ->
                             saveDialogRoomId = roomId
                             saveDialogName = savedRoomNameById[roomId].orEmpty()
+                        },
+                        onShareSavedRoom = { room ->
+                            shareText(
+                                context = context,
+                                text = buildSavedRoomShareLink(room),
+                                chooserTitle = context.getString(R.string.settings_saved_rooms_share_link_chooser)
+                            )
                         },
                         onRemoveSavedRoom = { roomId ->
                             if (removingSavedRoomIds.contains(roomId)) return@SavedRoomsSection
@@ -220,6 +243,7 @@ fun JoinScreen(
                         RecentCallsSection(
                             calls = recentCalls,
                             roomStatuses = roomStatuses,
+                            serverHost = serverHost,
                             savedRoomNameById = savedRoomNameById,
                             removingRoomIds = removingRecentRoomIds.toSet(),
                             isBusy = isBusy,
@@ -243,6 +267,7 @@ fun JoinScreen(
                         RecentCallsSection(
                             calls = recentCalls,
                             roomStatuses = roomStatuses,
+                            serverHost = serverHost,
                             savedRoomNameById = savedRoomNameById,
                             removingRoomIds = removingRecentRoomIds.toSet(),
                             isBusy = isBusy,
@@ -265,6 +290,7 @@ fun JoinScreen(
                     SavedRoomsSection(
                         rooms = savedRooms,
                         roomStatuses = roomStatuses,
+                        serverHost = serverHost,
                         removingRoomIds = removingSavedRoomIds.toSet(),
                         isBusy = isBusy,
                         onCreateRoom = { showCreateRoomDialog = true },
@@ -272,6 +298,13 @@ fun JoinScreen(
                         onRenameSavedRoom = { roomId ->
                             saveDialogRoomId = roomId
                             saveDialogName = savedRoomNameById[roomId].orEmpty()
+                        },
+                        onShareSavedRoom = { room ->
+                            shareText(
+                                context = context,
+                                text = buildSavedRoomShareLink(room),
+                                chooserTitle = context.getString(R.string.settings_saved_rooms_share_link_chooser)
+                            )
                         },
                         onRemoveSavedRoom = { roomId ->
                             if (removingSavedRoomIds.contains(roomId)) return@SavedRoomsSection
@@ -315,6 +348,7 @@ fun JoinScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        .testTag("join.busyOverlay")
                         .background(Color.Black.copy(alpha = 0.24f))
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
@@ -385,10 +419,11 @@ fun JoinScreen(
 private fun RecentCallsSection(
     calls: List<RecentCall>,
     roomStatuses: Map<String, Int>,
+    serverHost: String,
     savedRoomNameById: Map<String, String>,
     removingRoomIds: Set<String>,
     isBusy: Boolean,
-    onJoinRecentCall: (String) -> Unit,
+    onJoinRecentCall: (RecentCall) -> Unit,
     onSaveRecentCall: (String) -> Unit,
     onRemoveRecentCall: (String) -> Unit
 ) {
@@ -403,12 +438,19 @@ private fun RecentCallsSection(
                 .fillMaxWidth()
                 .animateContentSize()
         ) {
-            Text(
-                text = stringResource(R.string.recent_calls_title),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = JoinSectionRowMinHeight)
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.recent_calls_title),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
             calls.forEachIndexed { index, call ->
                 val isRemoving = removingRoomIds.contains(call.roomId)
@@ -417,14 +459,16 @@ private fun RecentCallsSection(
                     enter = fadeIn(),
                     exit = shrinkVertically() + fadeOut()
                 ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.fillMaxWidth()
+                        .testTag("join.recentCall.${call.roomId}")) {
                         RecentCallRow(
                             call = call,
                             count = roomStatuses[call.roomId] ?: 0,
                             enabled = !isBusy && !isRemoving,
                             atText = atText,
-                            isSaved = savedRoomNameById.containsKey(call.roomId),
-                            onClick = { onJoinRecentCall(call.roomId) },
+                            savedRoomName = savedRoomNameById[call.roomId],
+                            hostLabel = call.host?.takeUnless { it.equals(serverHost, ignoreCase = true) },
+                            onClick = { onJoinRecentCall(call) },
                             onSave = { onSaveRecentCall(call.roomId) },
                             onRemove = { onRemoveRecentCall(call.roomId) }
                         )
@@ -445,11 +489,13 @@ private fun RecentCallsSection(
 private fun SavedRoomsSection(
     rooms: List<SavedRoom>,
     roomStatuses: Map<String, Int>,
+    serverHost: String,
     removingRoomIds: Set<String>,
     isBusy: Boolean,
     onCreateRoom: () -> Unit,
     onJoinSavedRoom: (SavedRoom) -> Unit,
     onRenameSavedRoom: (String) -> Unit,
+    onShareSavedRoom: (SavedRoom) -> Unit,
     onRemoveSavedRoom: (String) -> Unit
 ) {
     val lastJoinedLabel = stringResource(R.string.saved_rooms_last_joined)
@@ -472,6 +518,7 @@ private fun SavedRoomsSection(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(min = JoinSectionRowMinHeight)
                     .padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -502,10 +549,12 @@ private fun SavedRoomsSection(
                                     lastJoinedLabel = lastJoinedLabel,
                                     neverJoinedLabel = neverJoinedLabel
                                 ),
+                                hostLabel = room.host?.takeUnless { it.equals(serverHost, ignoreCase = true) },
                                 count = roomStatuses[room.roomId] ?: 0,
                                 enabled = !isBusy && !isRemoving,
                                 onClick = { onJoinSavedRoom(room) },
                                 onRename = { onRenameSavedRoom(room.roomId) },
+                                onShare = { onShareSavedRoom(room) },
                                 onRemove = { onRemoveSavedRoom(room.roomId) }
                             )
                             if (index < rooms.lastIndex) {
@@ -529,49 +578,92 @@ private fun RecentCallRow(
     count: Int,
     enabled: Boolean,
     atText: String,
-    isSaved: Boolean,
+    savedRoomName: String?,
+    hostLabel: String?,
     onClick: () -> Unit,
     onSave: () -> Unit,
     onRemove: () -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
+    val hasSavedRoom = !savedRoomName.isNullOrBlank()
+    val destructiveColor = MaterialTheme.colorScheme.error
+    val menuWidth = 252.dp
 
-    Box(modifier = Modifier.fillMaxWidth()) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val centeredMenuOffset = DpOffset(x = (maxWidth - menuWidth) / 2, y = 0.dp)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(min = JoinSectionRowMinHeight)
                 .combinedClickable(
                     enabled = enabled,
                     onClick = onClick,
                     onLongClick = { menuExpanded = true }
                 )
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .padding(horizontal = 16.dp, vertical = 11.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            StatusDot(count = count)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = formatDateTime(call.startTime, atText),
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1
+                )
+                if (hasSavedRoom) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = savedRoomName.orEmpty(),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                }
+                if (!hostLabel.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = hostLabel,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        maxLines = 1
+                    )
+                }
+            }
             Spacer(modifier = Modifier.width(12.dp))
-            Text(
-                text = formatDateTime(call.startTime, atText),
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Spacer(modifier = Modifier.width(12.dp))
-            Text(
-                text = formatDuration(call.durationSeconds),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = formatDuration(call.durationSeconds),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (count > 0) {
+                    Spacer(modifier = Modifier.width(10.dp))
+                    StatusDot(count = count)
+                }
+            }
         }
 
         DropdownMenu(
             expanded = menuExpanded,
-            onDismissRequest = { menuExpanded = false }
+            onDismissRequest = { menuExpanded = false },
+            modifier = Modifier.width(menuWidth),
+            offset = centeredMenuOffset,
+            shape = RoundedCornerShape(14.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.98f),
+            tonalElevation = 16.dp,
+            shadowElevation = 20.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
         ) {
             DropdownMenuItem(
                 text = {
                     Text(
-                        if (isSaved) stringResource(R.string.saved_rooms_rename)
+                        if (hasSavedRoom) stringResource(R.string.saved_rooms_rename)
                         else stringResource(R.string.saved_rooms_save)
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = if (hasSavedRoom) Icons.Default.Edit else Icons.Default.Save,
+                        contentDescription = null
                     )
                 },
                 onClick = {
@@ -580,7 +672,19 @@ private fun RecentCallRow(
                 }
             )
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.recent_calls_remove)) },
+                text = {
+                    Text(
+                        text = stringResource(R.string.recent_calls_remove),
+                        color = destructiveColor
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = null,
+                        tint = destructiveColor
+                    )
+                },
                 onClick = {
                     menuExpanded = false
                     onRemove()
@@ -595,27 +699,31 @@ private fun RecentCallRow(
 private fun SavedRoomRow(
     room: SavedRoom,
     detailsText: String,
+    hostLabel: String?,
     count: Int,
     enabled: Boolean,
     onClick: () -> Unit,
     onRename: () -> Unit,
+    onShare: () -> Unit,
     onRemove: () -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
-    Box(modifier = Modifier.fillMaxWidth()) {
+    val destructiveColor = MaterialTheme.colorScheme.error
+    val menuWidth = 252.dp
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val centeredMenuOffset = DpOffset(x = (maxWidth - menuWidth) / 2, y = 0.dp)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(min = JoinSectionRowMinHeight)
                 .combinedClickable(
                     enabled = enabled,
                     onClick = onClick,
                     onLongClick = { menuExpanded = true }
                 )
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .padding(horizontal = 16.dp, vertical = 11.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            StatusDot(count = count)
-            Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = room.name,
@@ -627,22 +735,73 @@ private fun SavedRoomRow(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (!hostLabel.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = hostLabel,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        maxLines = 1
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            if (count > 0) {
+                StatusDot(count = count)
             }
         }
 
         DropdownMenu(
             expanded = menuExpanded,
-            onDismissRequest = { menuExpanded = false }
+            onDismissRequest = { menuExpanded = false },
+            modifier = Modifier.width(menuWidth),
+            offset = centeredMenuOffset,
+            shape = RoundedCornerShape(14.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.98f),
+            tonalElevation = 16.dp,
+            shadowElevation = 20.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
         ) {
             DropdownMenuItem(
+                text = { Text(stringResource(R.string.settings_saved_rooms_share_link_chooser)) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = null
+                    )
+                },
+                onClick = {
+                    menuExpanded = false
+                    onShare()
+                }
+            )
+            DropdownMenuItem(
                 text = { Text(stringResource(R.string.saved_rooms_rename)) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = null
+                    )
+                },
                 onClick = {
                     menuExpanded = false
                     onRename()
                 }
             )
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.saved_rooms_remove)) },
+                text = {
+                    Text(
+                        text = stringResource(R.string.saved_rooms_remove),
+                        color = destructiveColor
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = null,
+                        tint = destructiveColor
+                    )
+                },
                 onClick = {
                     menuExpanded = false
                     onRemove()
@@ -792,12 +951,8 @@ private fun CreateRoomDialog(
 
 @Composable
 private fun StatusDot(count: Int) {
-    val color =
-        when {
-            count == 1 -> Color(0xFF3FB950)
-            count >= 2 -> Color(0xFFD29922)
-            else -> Color.Transparent
-        }
+    if (count < 1) return
+    val color = if (count == 1) Color(0xFF3FB950) else Color(0xFFD29922)
     Box(
         modifier = Modifier
             .size(8.dp)
@@ -817,10 +972,14 @@ private fun formatDateTime(timestamp: Long, atText: String): String {
 
 private fun formatDuration(durationSeconds: Int): String {
     val seconds = durationSeconds.coerceAtLeast(0)
-    if (seconds < 60) return "${seconds}s"
-    val mins = seconds / 60
-    val secs = seconds % 60
-    return "${mins}m ${secs}s"
+    if (seconds < 120) {
+        val mins = seconds / 60
+        val secs = seconds % 60
+        if (mins == 0) return "${secs}s"
+        return "${mins}m ${secs}s"
+    }
+    val mins = kotlin.math.round(seconds / 60.0).toInt()
+    return "${mins}m"
 }
 
 private fun formatLastJoined(timestamp: Long?, lastJoinedLabel: String, neverJoinedLabel: String): String {
@@ -835,6 +994,24 @@ private fun formatLastJoined(timestamp: Long?, lastJoinedLabel: String, neverJoi
         .withLocale(locale)
         .format(zonedDateTime)
     return String.format(locale, lastJoinedLabel, formatted)
+}
+
+private fun buildSavedRoomShareLink(room: SavedRoom): String {
+    val resolvedHost = room.host?.trim().orEmpty().ifBlank { SettingsStore.DEFAULT_HOST }
+    val appLinkHost = if (resolvedHost == SettingsStore.HOST_RU) {
+        SettingsStore.HOST_RU
+    } else {
+        SettingsStore.DEFAULT_HOST
+    }
+    return Uri.Builder()
+        .scheme("https")
+        .authority(appLinkHost)
+        .appendPath("call")
+        .appendPath(room.roomId)
+        .appendQueryParameter("host", resolvedHost)
+        .appendQueryParameter("name", room.name)
+        .build()
+        .toString()
 }
 
 private fun shareText(context: Context, text: String, chooserTitle: String) {

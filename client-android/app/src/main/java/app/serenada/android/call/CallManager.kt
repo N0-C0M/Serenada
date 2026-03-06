@@ -11,6 +11,10 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
+import android.provider.Settings
 import android.util.Log
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
@@ -49,12 +53,38 @@ class CallManager(context: Context) {
         appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     private val powerManager = appContext.getSystemService(Context.POWER_SERVICE) as PowerManager
     private val wifiManager = appContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+    private val vibrator: Vibrator? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            appContext.getSystemService(VibratorManager::class.java)?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            appContext.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+        }
 
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
             handler.post {
                 if (_uiState.value.phase == CallPhase.InCall) {
+                    val state = _uiState.value
+                    if (isConnectionDegraded(state)) {
+                        markConnectionDegraded()
+                    }
+                    // Keep opportunistic ICE restart on network transitions so the call can
+                    // migrate to a better path (for example mobile -> Wi-Fi) without forcing UI
+                    // into degraded mode when media is still flowing.
                     scheduleIceRestart("network-online", 0)
+                }
+            }
+        }
+
+        override fun onLost(network: Network) {
+            handler.post {
+                if (_uiState.value.phase == CallPhase.InCall) {
+                    val state = _uiState.value
+                    val hasAnyActiveNetwork = connectivityManager.activeNetwork != null
+                    if (!hasAnyActiveNetwork || isConnectionDegraded(state)) {
+                        markConnectionDegraded()
+                    }
                 }
             }
         }
@@ -111,6 +141,7 @@ class CallManager(context: Context) {
     private var pendingIceRestart = false
     private var lastIceRestartAt = 0L
     private var iceRestartRunnable: Runnable? = null
+    private var connectionStatusRetryingRunnable: Runnable? = null
     private var offerTimeoutRunnable: Runnable? = null
     private var joinTimeoutRunnable: Runnable? = null
     private var joinKickstartRunnable: Runnable? = null
@@ -160,10 +191,10 @@ class CallManager(context: Context) {
             updateState(
                 _uiState.value.copy(
                     isSignalingConnected = true,
-                    isReconnecting = false,
                     activeTransport = activeTransport
                 )
             )
+            updateConnectionStatusFromSignals()
             pendingJoinRoom?.let { join ->
                 pendingJoinRoom = null
                 sendJoin(join)
@@ -182,9 +213,9 @@ class CallManager(context: Context) {
             val shouldReconnect = shouldReconnectSignaling()
             updateState(_uiState.value.copy(
                 isSignalingConnected = false,
-                isReconnecting = shouldReconnect,
                 activeTransport = null
             ))
+            updateConnectionStatusFromSignals()
             if (shouldReconnect) {
                 scheduleReconnect()
             }
@@ -240,6 +271,7 @@ class CallManager(context: Context) {
                         PeerConnection.PeerConnectionState.FAILED -> scheduleIceRestart("conn-failed", 0)
                         else -> {}
                     }
+                    updateConnectionStatusFromSignals()
                 }
             },
             onIceConnectionState = { state ->
@@ -260,6 +292,7 @@ class CallManager(context: Context) {
 
                         else -> {}
                     }
+                    updateConnectionStatusFromSignals()
                 }
             },
             onSignalingState = { state ->
@@ -329,6 +362,115 @@ class CallManager(context: Context) {
 
     private fun shouldReconnectSignaling(): Boolean {
         return currentRoomId != null || watchedRoomIds.isNotEmpty()
+    }
+
+    private fun clearConnectionStatusRetryingTimer() {
+        connectionStatusRetryingRunnable?.let { handler.removeCallbacks(it) }
+        connectionStatusRetryingRunnable = null
+    }
+
+    private fun vibrateOnRetrying() {
+        val vibrator = vibrator ?: return
+        if (!vibrator.hasVibrator()) {
+            Log.d("CallManager", "Retrying haptic skipped: no vibrator hardware")
+            return
+        }
+        val hapticFeedbackEnabled =
+            runCatching {
+                Settings.System.getInt(
+                    appContext.contentResolver,
+                    Settings.System.HAPTIC_FEEDBACK_ENABLED,
+                    -1
+                )
+            }.getOrDefault(-1)
+        Log.d(
+            "CallManager",
+            "Retrying haptic attempt (hapticFeedbackEnabled=$hapticFeedbackEnabled)"
+        )
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                // Use an explicit, stronger pulse to remain noticeable on devices with subtle defaults.
+                vibrator.vibrate(VibrationEffect.createOneShot(160, 255))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(160)
+            }
+        }.onSuccess {
+            Log.d("CallManager", "Retrying haptic triggered")
+        }.onFailure { error ->
+            Log.w("CallManager", "Failed to trigger retrying haptic", error)
+        }
+    }
+
+    private fun setConnectionStatus(status: ConnectionStatus) {
+        val current = _uiState.value.connectionStatus
+        if (current == status) return
+        Log.d("CallManager", "Connection status: $current -> $status")
+        updateState(_uiState.value.copy(connectionStatus = status))
+        if (current != ConnectionStatus.Retrying && status == ConnectionStatus.Retrying) {
+            vibrateOnRetrying()
+        }
+    }
+
+    private fun resetConnectionStatusMachine() {
+        clearConnectionStatusRetryingTimer()
+        setConnectionStatus(ConnectionStatus.Connected)
+    }
+
+    private fun scheduleConnectionStatusRetryingTimer() {
+        if (connectionStatusRetryingRunnable != null) return
+
+        val runnable = Runnable {
+            connectionStatusRetryingRunnable = null
+            if (_uiState.value.phase != CallPhase.InCall) {
+                resetConnectionStatusMachine()
+                return@Runnable
+            }
+            if (_uiState.value.connectionStatus == ConnectionStatus.Recovering) {
+                setConnectionStatus(ConnectionStatus.Retrying)
+            }
+        }
+        connectionStatusRetryingRunnable = runnable
+        handler.postDelayed(runnable, 10_000)
+    }
+
+    private fun markConnectionDegraded() {
+        if (_uiState.value.phase != CallPhase.InCall) {
+            resetConnectionStatusMachine()
+            return
+        }
+        when (_uiState.value.connectionStatus) {
+            ConnectionStatus.Connected -> {
+                setConnectionStatus(ConnectionStatus.Recovering)
+                scheduleConnectionStatusRetryingTimer()
+            }
+
+            ConnectionStatus.Recovering -> scheduleConnectionStatusRetryingTimer()
+            ConnectionStatus.Retrying -> Unit
+        }
+    }
+
+    private fun updateConnectionStatusFromSignals() {
+        val state = _uiState.value
+        if (state.phase != CallPhase.InCall) {
+            resetConnectionStatusMachine()
+            return
+        }
+
+        if (isConnectionDegraded(state)) {
+            markConnectionDegraded()
+            return
+        }
+
+        resetConnectionStatusMachine()
+    }
+
+    private fun isConnectionDegraded(state: CallUiState): Boolean {
+        return !state.isSignalingConnected ||
+            state.iceConnectionState == "DISCONNECTED" ||
+            state.iceConnectionState == "FAILED" ||
+            state.connectionState == "DISCONNECTED" ||
+            state.connectionState == "FAILED"
     }
 
     fun updateServerHost(host: String) {
@@ -406,23 +548,30 @@ class CallManager(context: Context) {
     fun saveRoom(roomId: String, name: String, host: String? = null) {
         val cleanRoomId = roomId.trim()
         val cleanName = normalizeSavedRoomName(name) ?: return
-        val normalizedHost = normalizeHostValue(host)
-        val hostOverride = normalizedHost?.takeUnless { isTrustedDeepLinkHost(it) }
         if (!isValidRoomId(cleanRoomId)) return
+        val existingRoom = _savedRooms.value.firstOrNull { it.roomId == cleanRoomId }
+        val recentHost = _recentCalls.value.firstOrNull { it.roomId == cleanRoomId }?.host
+        val resolvedHost = normalizeHostValue(host)
+            ?: existingRoom?.host
+            ?: recentHost
+            ?: serverHost.value
         savedRoomStore.saveRoom(
             SavedRoom(
                 roomId = cleanRoomId,
                 name = cleanName,
                 createdAt = System.currentTimeMillis(),
-                host = hostOverride
+                host = resolvedHost
             )
         )
         refreshSavedRooms()
     }
 
     fun joinSavedRoom(room: SavedRoom) {
-        val roomHostOverride = normalizeHostValue(room.host)?.takeUnless { isTrustedDeepLinkHost(it) }
-        joinRoom(room.roomId, roomHostOverride)
+        joinRoom(room.roomId, hostOverrideOrNull(room.host))
+    }
+
+    fun joinRecentCall(call: RecentCall) {
+        joinRoom(call.roomId, hostOverrideOrNull(call.host))
     }
 
     fun removeSavedRoom(roomId: String) {
@@ -455,12 +604,11 @@ class CallManager(context: Context) {
             }
             return
         }
-        val roomHostOverride = normalizedHost.takeUnless { isTrustedDeepLinkHost(it) }
         apiClient.createRoomId(normalizedHost) { result ->
             handler.post {
                 result
                     .onSuccess { roomId ->
-                        saveRoom(roomId, normalizedName, roomHostOverride)
+                        saveRoom(roomId, normalizedName, normalizedHost)
                         val link = buildSavedRoomInviteLink(normalizedHost, roomId, normalizedName)
                         onResult(Result.success(link))
                     }
@@ -475,7 +623,7 @@ class CallManager(context: Context) {
         if (deepLinkTarget.action == DeepLinkAction.SaveRoom) {
             hostPolicy.persistedHost?.let { updateServerHost(it) }
             val roomName = deepLinkTarget.savedRoomName ?: deepLinkTarget.roomId
-            saveRoom(deepLinkTarget.roomId, roomName, hostPolicy.oneOffHost)
+            saveRoom(deepLinkTarget.roomId, roomName, deepLinkTarget.host)
             return
         }
 
@@ -513,7 +661,7 @@ class CallManager(context: Context) {
                 hostPolicy.persistedHost?.let { updateServerHost(it) }
                 if (deepLinkTarget.action == DeepLinkAction.SaveRoom) {
                     val roomName = deepLinkTarget.savedRoomName ?: deepLinkTarget.roomId
-                    saveRoom(deepLinkTarget.roomId, roomName, hostPolicy.oneOffHost)
+                    saveRoom(deepLinkTarget.roomId, roomName, deepLinkTarget.host)
                 } else {
                     joinRoom(deepLinkTarget.roomId, hostPolicy.oneOffHost)
                 }
@@ -653,6 +801,9 @@ class CallManager(context: Context) {
             refreshSavedRooms()
         }
         activeCallHostOverride = normalizeHostValue(oneOffHost)
+        if (activeCallHostOverride != null && signalingClient.isConnected()) {
+            signalingClient.close()
+        }
         currentRoomId = roomId
         val joinAttemptId = ++joinAttemptSerial
         callStartTimeMs = System.currentTimeMillis()
@@ -678,6 +829,7 @@ class CallManager(context: Context) {
                 localAudioEnabled = defaultAudio,
                 localVideoEnabled = defaultVideo,
                 localCameraMode = LocalCameraMode.SELFIE,
+                connectionStatus = ConnectionStatus.Connected,
                 webrtcStatsSummary = "",
                 realtimeCallStats = null,
                 isFlashAvailable = false,
@@ -1129,6 +1281,7 @@ class CallManager(context: Context) {
                     }
             )
         )
+        updateConnectionStatusFromSignals()
         if (count > 1) {
             webRtcEngine.ensurePeerConnection()
         }
@@ -1503,6 +1656,7 @@ class CallManager(context: Context) {
                     participantCount = 1,
                     statusMessageResId = R.string.call_status_waiting_for_join
                 ))
+                updateConnectionStatusFromSignals()
             }
         }
         joinRecoveryRunnable = runnable
@@ -1625,6 +1779,7 @@ class CallManager(context: Context) {
         pendingIceRestart = false
         clearOfferTimeout()
         clearIceRestartTimer()
+        clearConnectionStatusRetryingTimer()
         userPreferredVideoEnabled = true
         isVideoPausedByProximity = false
         reconnectToken = null
@@ -1747,21 +1902,36 @@ class CallManager(context: Context) {
 
     private fun refreshRecentCalls() {
         val calls = recentCallStore.getRecentCalls()
-        _recentCalls.value = calls
+        if (calls.any { it.host == null }) {
+            val host = serverHost.value
+            val patched = calls.map { if (it.host == null) it.copy(host = host) else it }
+            patched.forEach { recentCallStore.saveCall(it) }
+            _recentCalls.value = patched
+        } else {
+            _recentCalls.value = calls
+        }
         refreshWatchedRooms()
     }
 
     private fun refreshSavedRooms() {
         val rooms = savedRoomStore.getSavedRooms()
-        _savedRooms.value = rooms
-        syncSavedRoomPushSubscriptions(rooms)
+        if (rooms.any { it.host == null }) {
+            val host = serverHost.value
+            rooms.filter { it.host == null }.forEach {
+                savedRoomStore.saveRoom(it.copy(host = host))
+            }
+            _savedRooms.value = savedRoomStore.getSavedRooms()
+        } else {
+            _savedRooms.value = rooms
+        }
+        syncSavedRoomPushSubscriptions(_savedRooms.value)
         refreshWatchedRooms()
     }
 
     private fun syncSavedRoomPushSubscriptions(rooms: List<SavedRoom>) {
         val host = serverHost.value
         rooms
-            .filter { shouldWatchSavedRoom(it) }
+            .filter { isCurrentServerHost(it.host) }
             .forEach { room ->
                 pushSubscriptionManager.subscribeRoom(room.roomId, host)
             }
@@ -1771,9 +1941,13 @@ class CallManager(context: Context) {
         return _savedRooms.value.firstOrNull { it.roomId == roomId }?.name
     }
 
-    private fun shouldWatchSavedRoom(room: SavedRoom): Boolean {
-        val roomHost = room.host ?: return true
-        return roomHost.equals(serverHost.value, ignoreCase = true)
+    private fun isCurrentServerHost(host: String?): Boolean {
+        val h = host ?: return true
+        return h.equals(serverHost.value, ignoreCase = true)
+    }
+
+    private fun hostOverrideOrNull(host: String?): String? {
+        return normalizeHostValue(host)?.takeUnless { isCurrentServerHost(it) }
     }
 
     private fun currentSignalingHost(): String {
@@ -1787,9 +1961,11 @@ class CallManager(context: Context) {
     private fun refreshWatchedRooms() {
         val mergedRoomIds = LinkedHashSet<String>()
         _savedRooms.value
-            .filter { shouldWatchSavedRoom(it) }
+            .filter { isCurrentServerHost(it.host) }
             .forEach { mergedRoomIds.add(it.roomId) }
-        _recentCalls.value.forEach { mergedRoomIds.add(it.roomId) }
+        _recentCalls.value
+            .filter { isCurrentServerHost(it.host) }
+            .forEach { mergedRoomIds.add(it.roomId) }
         watchedRoomIds = mergedRoomIds.toList()
         val watched = watchedRoomIds.toSet()
         _roomStatuses.value = _roomStatuses.value.filterKeys { watched.contains(it) }
@@ -1820,7 +1996,8 @@ class CallManager(context: Context) {
             RecentCall(
                 roomId = roomId,
                 startTime = startTime,
-                durationSeconds = durationSeconds
+                durationSeconds = durationSeconds,
+                host = currentSignalingHost()
             )
         )
         callStartTimeMs = null

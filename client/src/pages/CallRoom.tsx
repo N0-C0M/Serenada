@@ -226,7 +226,8 @@ const CallRoom: React.FC = () => {
         peerConnection,
         iceConnectionState,
         connectionState,
-        signalingState
+        signalingState,
+        connectionStatus
     } = useWebRTC();
     const { showToast } = useToast();
 
@@ -236,7 +237,7 @@ const CallRoom: React.FC = () => {
     const [areControlsVisible, setAreControlsVisible] = useState(true);
     const [isLocalLarge, setIsLocalLarge] = useState(false);
     const [remoteVideoFit, setRemoteVideoFit] = useState<'cover' | 'contain'>('cover');
-    const [showReconnecting, setShowReconnecting] = useState(false);
+    const [showRecoveringBadge, setShowRecoveringBadge] = useState(false);
     const [showWaiting, setShowWaiting] = useState(true);
 
     const lastFacingModeRef = useRef(facingMode);
@@ -374,33 +375,33 @@ const CallRoom: React.FC = () => {
 
     useEffect(() => {
         if (!hasJoined) {
-            setShowReconnecting(false);
+            setShowRecoveringBadge(false);
             return;
         }
-        const reconnecting =
-            !isConnected ||
-            iceConnectionState === 'disconnected' ||
-            iceConnectionState === 'failed' ||
-            connectionState === 'disconnected' ||
-            connectionState === 'failed';
 
-        if (!reconnecting) {
-            setShowReconnecting(false);
+        if (connectionStatus !== 'recovering') {
+            setShowRecoveringBadge(false);
             return;
         }
 
         const timer = window.setTimeout(() => {
-            setShowReconnecting(true);
+            setShowRecoveringBadge(true);
         }, 800);
 
         return () => {
             window.clearTimeout(timer);
         };
-    }, [hasJoined, isConnected, iceConnectionState, connectionState]);
+    }, [hasJoined, connectionStatus]);
+
+    const showReconnecting =
+        hasJoined &&
+        (connectionStatus === 'retrying' || (connectionStatus === 'recovering' && showRecoveringBadge));
 
     const localVideoRef = useRef<HTMLVideoElement>(null);
     const remoteVideoRef = useRef<HTMLVideoElement>(null);
     const idleTimeoutRef = useRef<number | null>(null);
+    const isControlsAutoHideEnabledRef = useRef(true);
+    const wereControlsLastHiddenByAutoHideRef = useRef(false);
     const waitingTimerRef = useRef<number | null>(null);
     const [showDebug, setShowDebug] = useState(false);
     const debugTapRef = useRef<number>(0);
@@ -670,10 +671,14 @@ const CallRoom: React.FC = () => {
 
 
     const scheduleIdleHide = () => {
+        if (!isControlsAutoHideEnabledRef.current) {
+            return;
+        }
         if (idleTimeoutRef.current) {
             window.clearTimeout(idleTimeoutRef.current);
         }
         idleTimeoutRef.current = window.setTimeout(() => {
+            wereControlsLastHiddenByAutoHideRef.current = true;
             setAreControlsVisible(false);
         }, 10000);
     };
@@ -688,8 +693,15 @@ const CallRoom: React.FC = () => {
         setAreControlsVisible(prev => {
             const next = !prev;
             if (next) {
-                scheduleIdleHide();
+                if (wereControlsLastHiddenByAutoHideRef.current) {
+                    isControlsAutoHideEnabledRef.current = false;
+                    wereControlsLastHiddenByAutoHideRef.current = false;
+                    clearIdleHide();
+                } else {
+                    scheduleIdleHide();
+                }
             } else {
+                wereControlsLastHiddenByAutoHideRef.current = false;
                 clearIdleHide();
             }
             return next;
@@ -698,11 +710,19 @@ const CallRoom: React.FC = () => {
 
     const handleControlsInteraction = () => {
         setAreControlsVisible(true);
+        if (wereControlsLastHiddenByAutoHideRef.current) {
+            isControlsAutoHideEnabledRef.current = false;
+            wereControlsLastHiddenByAutoHideRef.current = false;
+            clearIdleHide();
+            return;
+        }
         scheduleIdleHide();
     };
 
     useEffect(() => {
         if (!hasJoined) return;
+        isControlsAutoHideEnabledRef.current = true;
+        wereControlsLastHiddenByAutoHideRef.current = false;
         scheduleIdleHide();
         const handleBeforeUnload = () => {
             exitFullscreenIfActive();
@@ -848,7 +868,7 @@ const CallRoom: React.FC = () => {
         connectionState,
         signalingState,
         roomParticipantCount: roomState ? roomState.participants.length : null,
-        showReconnecting,
+        showReconnecting: connectionStatus !== 'connected',
         realtimeStats
     });
 
@@ -886,7 +906,14 @@ const CallRoom: React.FC = () => {
             )}
             {showReconnecting && (
                 <div className="reconnect-overlay" aria-live="polite">
-                    <div className="reconnect-badge">{t('connecting')}</div>
+                    <div className={`reconnect-badge ${connectionStatus === 'retrying' ? 'reconnect-badge-retrying' : ''}`}>
+                        <span>{t('reconnecting', { defaultValue: 'Reconnecting...' })}</span>
+                        {connectionStatus === 'retrying' && (
+                            <span className="reconnect-badge-subtext">
+                                {t('reconnecting_taking_longer', { defaultValue: 'Taking longer than usual...' })}
+                            </span>
+                        )}
+                    </div>
                 </div>
             )}
             {/* Primary Video (Full Screen) */}

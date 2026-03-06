@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Github, Activity, Download } from 'lucide-react';
+import { Github, Activity, Download, Heart } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useToast } from '../contexts/ToastContext';
 
@@ -93,7 +93,12 @@ const Footer: React.FC = () => {
                     rel="noopener noreferrer"
                     className="footer-link"
                 >
+<<<<<<< HEAD
                     Support us
+=======
+                    <Heart className="icon" />
+                    {t('footer_support_us')}
+>>>>>>> ea95291cf406b489d794af1bc05176582bb79d26
                 </a>
 
                 {!isStandalone && (

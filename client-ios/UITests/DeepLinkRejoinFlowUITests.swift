@@ -24,18 +24,21 @@ final class DeepLinkRejoinFlowUITests: XCTestCase {
         app.activate()
 
         guard assertCallScreenVisible(in: app, timeout: 45) else { return }
+        guard waitForPeerToJoin(in: app, timeout: 25) else { return }
 
         guard leaveCall(in: app) else { return }
         guard assertJoinScreenVisible(in: app, timeout: 20) else { return }
 
         guard rejoinFromRecents(in: app, roomId: roomId, timeout: 20) else { return }
         guard assertCallScreenVisible(in: app, timeout: 45) else { return }
+        guard waitForPeerToJoin(in: app, timeout: 25) else { return }
 
         guard leaveCall(in: app) else { return }
         guard assertJoinScreenVisible(in: app, timeout: 20) else { return }
 
         guard rejoinFromRecents(in: app, roomId: roomId, timeout: 20) else { return }
-        _ = assertCallScreenVisible(in: app, timeout: 45)
+        guard assertCallScreenVisible(in: app, timeout: 45) else { return }
+        _ = waitForPeerToJoin(in: app, timeout: 25)
     }
 
     private func resolveDeepLinkURL() async throws -> String {
@@ -129,7 +132,7 @@ final class DeepLinkRejoinFlowUITests: XCTestCase {
             return false
         }
 
-        guard waitForEndCallButton(in: app, timeout: 12) else {
+        guard revealCallControlsAndWaitForEndCall(in: app, timeout: 12) else {
             let hierarchyAttachment = XCTAttachment(string: app.debugDescription)
             hierarchyAttachment.name = "MissingEndCallHierarchy"
             hierarchyAttachment.lifetime = .keepAlways
@@ -195,18 +198,15 @@ final class DeepLinkRejoinFlowUITests: XCTestCase {
         line: UInt = #line
     ) -> Bool {
         let endCallButton = app.buttons["call.endCall"]
-        guard waitForEndCallButton(in: app, timeout: 12) else {
+        guard revealCallControlsAndWaitForEndCall(in: app, timeout: 12) else {
             let hierarchyAttachment = XCTAttachment(string: app.debugDescription)
-            hierarchyAttachment.name = "LeaveCallMissingButtonHierarchy"
+            hierarchyAttachment.name = "LeaveCallControlsNotHittableHierarchy"
             hierarchyAttachment.lifetime = .keepAlways
             add(hierarchyAttachment)
-            XCTFail("Unable to find end call button", file: file, line: line)
+            XCTFail("End call control did not become hittable", file: file, line: line)
             return false
         }
 
-        if !endCallButton.isHittable {
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        }
         endCallButton.tap()
         return true
     }
@@ -236,21 +236,66 @@ final class DeepLinkRejoinFlowUITests: XCTestCase {
         return true
     }
 
-    private func waitForEndCallButton(in app: XCUIApplication, timeout: TimeInterval) -> Bool {
+    private func revealCallControlsAndWaitForEndCall(in app: XCUIApplication, timeout: TimeInterval) -> Bool {
         let endCallButton = app.buttons["call.endCall"]
-        if endCallButton.waitForExistence(timeout: 1.5) {
+        if endCallButton.isHittable {
             return true
         }
 
-        // Call controls can be hidden by a prior tap; poke the center to reveal them.
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-            if endCallButton.waitForExistence(timeout: 1.0) {
+            if endCallButton.waitForExistence(timeout: 1.0), endCallButton.isHittable {
                 return true
             }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
         }
+
+        return endCallButton.exists && endCallButton.isHittable
+    }
+
+    @discardableResult
+    private func waitForPeerToJoin(
+        in app: XCUIApplication,
+        timeout: TimeInterval,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> Bool {
+        let participantCountElement = app.otherElements["call.participantCount"]
+        guard participantCountElement.waitForExistence(timeout: 3) else {
+            let hierarchyAttachment = XCTAttachment(string: app.debugDescription)
+            hierarchyAttachment.name = "MissingParticipantCountHierarchy"
+            hierarchyAttachment.lifetime = .keepAlways
+            add(hierarchyAttachment)
+            XCTFail("Participant count probe is missing", file: file, line: line)
+            return false
+        }
+
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let count = currentParticipantCount(from: participantCountElement), count >= 2 {
+                return true
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        }
+
+        let hierarchyAttachment = XCTAttachment(string: app.debugDescription)
+        hierarchyAttachment.name = "PeerDidNotJoinHierarchy"
+        hierarchyAttachment.lifetime = .keepAlways
+        add(hierarchyAttachment)
+        let observedCount = currentParticipantCount(from: participantCountElement).map(String.init) ?? "unknown"
+        XCTFail("Peer did not join call within \(timeout)s (participantCount=\(observedCount))", file: file, line: line)
         return false
+    }
+
+    private func currentParticipantCount(from element: XCUIElement) -> Int? {
+        if let number = element.value as? NSNumber {
+            return number.intValue
+        }
+        if let value = element.value as? String {
+            return Int(value.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        return nil
     }
 
     private func createRoomId() async throws -> String {

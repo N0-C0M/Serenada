@@ -31,6 +31,7 @@ func resolveJoinRecoveryState(
 @MainActor
 final class CallManager: ObservableObject {
     private let permissionRequestTimeoutNs: UInt64 = 2_000_000_000
+    private let connectionStatusRetryingDelayNs: UInt64 = 10_000_000_000
 
     #if DEBUG
     private enum DebugTrace {
@@ -99,6 +100,7 @@ final class CallManager: ObservableObject {
     private var joinConnectKickstartTask: Task<Void, Never>?
     private var joinRecoveryTask: Task<Void, Never>?
     private var iceRestartTask: Task<Void, Never>?
+    private var connectionStatusRetryingTask: Task<Void, Never>?
     private var offerTimeoutTask: Task<Void, Never>?
     private var nonHostOfferFallbackTask: Task<Void, Never>?
     private var nonHostOfferFallbackAttempts = 0
@@ -185,6 +187,7 @@ final class CallManager: ObservableObject {
         joinConnectKickstartTask?.cancel()
         joinRecoveryTask?.cancel()
         iceRestartTask?.cancel()
+        connectionStatusRetryingTask?.cancel()
         offerTimeoutTask?.cancel()
         nonHostOfferFallbackTask?.cancel()
         turnRefreshTask?.cancel()
@@ -294,7 +297,7 @@ final class CallManager: ObservableObject {
             saveRoom(
                 roomId: target.roomId,
                 name: target.savedRoomName ?? target.roomId,
-                host: hostPolicy.oneOffHost
+                host: target.host
             )
             return
         }
@@ -320,7 +323,7 @@ final class CallManager: ObservableObject {
                 saveRoom(
                     roomId: target.roomId,
                     name: target.savedRoomName ?? target.roomId,
-                    host: hostPolicy.oneOffHost
+                    host: target.host
                 )
             } else {
                 joinRoom(target.roomId, oneOffHost: hostPolicy.oneOffHost)
@@ -367,6 +370,9 @@ final class CallManager: ObservableObject {
             refreshSavedRooms()
         }
         activeCallHostOverride = DeepLinkParser.normalizeHostValue(oneOffHost)
+        if activeCallHostOverride != nil && signalingClient.isConnected() {
+            signalingClient.close()
+        }
         currentRoomId = trimmed
         debugTraceReset("joinRoom rid=\(trimmed) host=\(currentSignalingHost()) oneOff=\(activeCallHostOverride ?? "-")")
         joinAttemptSerial += 1
@@ -395,6 +401,7 @@ final class CallManager: ObservableObject {
             $0.localVideoEnabled = defaultVideo
             $0.localCameraMode = .selfie
             $0.cameraZoomFactor = 1
+            $0.connectionStatus = .connected
             $0.webrtcStatsSummary = ""
             $0.realtimeStats = .empty
             $0.isFlashAvailable = false
@@ -445,14 +452,18 @@ final class CallManager: ObservableObject {
         guard !normalizedRoomId.isEmpty else { return }
         guard let normalizedName = DeepLinkParser.normalizeSavedRoomName(name) else { return }
 
-        let normalizedHost = DeepLinkParser.normalizeHostValue(host)
-        let hostOverride = normalizedHost.flatMap { DeepLinkParser.isTrustedHost($0) ? nil : $0 }
+        let existingHost = savedRooms.first(where: { $0.roomId == normalizedRoomId })?.host
+        let recentHost = recentCalls.first(where: { $0.roomId == normalizedRoomId })?.host
+        let resolvedHost = DeepLinkParser.normalizeHostValue(host)
+            ?? existingHost
+            ?? recentHost
+            ?? serverHost
 
         let room = SavedRoom(
             roomId: normalizedRoomId,
             name: normalizedName,
             createdAt: Int64(Date().timeIntervalSince1970 * 1000),
-            host: hostOverride,
+            host: resolvedHost,
             lastJoinedAt: nil
         )
         savedRoomStore.saveRoom(room)
@@ -460,7 +471,11 @@ final class CallManager: ObservableObject {
     }
 
     func joinSavedRoom(_ room: SavedRoom) {
-        joinRoom(room.roomId, oneOffHost: room.host)
+        joinRoom(room.roomId, oneOffHost: hostOverrideOrNull(room.host))
+    }
+
+    func joinRecentCall(_ call: RecentCall) {
+        joinRoom(call.roomId, oneOffHost: hostOverrideOrNull(call.host))
     }
 
     func removeSavedRoom(roomId: String) {
@@ -482,8 +497,7 @@ final class CallManager: ObservableObject {
 
         do {
             let roomId = try await apiClient.createRoomId(host: normalizedHost)
-            let roomHostOverride = DeepLinkParser.isTrustedHost(normalizedHost) ? nil : normalizedHost
-            saveRoom(roomId: roomId, name: normalizedName, host: roomHostOverride)
+            saveRoom(roomId: roomId, name: normalizedName, host: normalizedHost)
             return .success(buildSavedRoomInviteLink(host: normalizedHost, roomId: roomId, roomName: normalizedName))
         } catch {
             return .failure(error)
@@ -938,6 +952,7 @@ final class CallManager: ObservableObject {
             $0.participantCount = count
             $0.statusMessage = count <= 1 ? L10n.callStatusWaitingForJoin : L10n.callStatusInCall
         }
+        updateConnectionStatusFromSignals()
         debugTrace("updateParticipants stateApplied count=\(count) phase=\(phase.rawValue)")
 
         if count > 1 {
@@ -1499,6 +1514,7 @@ final class CallManager: ObservableObject {
         clearNonHostOfferFallback()
         nonHostOfferFallbackAttempts = 0
         clearIceRestartTimer()
+        clearConnectionStatusRetryingTimer()
         clearTurnRefresh()
 
         userPreferredVideoEnabled = true
@@ -1719,6 +1735,7 @@ final class CallManager: ObservableObject {
                 ? L10n.callStatusInCall
                 : L10n.callStatusWaitingForJoin
         }
+        updateConnectionStatusFromSignals()
     }
 
     private func scheduleReconnect() {
@@ -1752,20 +1769,39 @@ final class CallManager: ObservableObject {
 
     private func refreshRecentCalls() {
         let calls = recentCallStore.getRecentCalls()
-        recentCalls = calls
+        if calls.contains(where: { $0.host == nil }) {
+            let host = serverHost
+            let patched = calls.map { call in
+                call.host == nil
+                    ? RecentCall(roomId: call.roomId, startTime: call.startTime, durationSeconds: call.durationSeconds, host: host)
+                    : call
+            }
+            patched.forEach { recentCallStore.saveCall($0) }
+            recentCalls = patched
+        } else {
+            recentCalls = calls
+        }
         refreshWatchedRooms()
     }
 
     private func refreshSavedRooms() {
         let rooms = savedRoomStore.getSavedRooms()
-        savedRooms = rooms
-        syncSavedRoomPushSubscriptions(rooms)
+        if rooms.contains(where: { $0.host == nil }) {
+            let host = serverHost
+            for room in rooms where room.host == nil {
+                savedRoomStore.saveRoom(SavedRoom(roomId: room.roomId, name: room.name, createdAt: room.createdAt, host: host, lastJoinedAt: room.lastJoinedAt))
+            }
+            savedRooms = savedRoomStore.getSavedRooms()
+        } else {
+            savedRooms = rooms
+        }
+        syncSavedRoomPushSubscriptions(savedRooms)
         refreshWatchedRooms()
     }
 
     private func syncSavedRoomPushSubscriptions(_ rooms: [SavedRoom]) {
         let host = serverHost
-        for room in rooms where shouldWatchSavedRoom(room) {
+        for room in rooms where isCurrentServerHost(room.host) {
             pushSubscriptionManager.subscribeRoom(roomId: room.roomId, host: host)
         }
     }
@@ -1774,13 +1810,13 @@ final class CallManager: ObservableObject {
         var merged = [String]()
         var seen = Set<String>()
 
-        for room in savedRooms where shouldWatchSavedRoom(room) {
+        for room in savedRooms where isCurrentServerHost(room.host) {
             if seen.insert(room.roomId).inserted {
                 merged.append(room.roomId)
             }
         }
 
-        for call in recentCalls {
+        for call in recentCalls where isCurrentServerHost(call.host) {
             if seen.insert(call.roomId).inserted {
                 merged.append(call.roomId)
             }
@@ -1793,9 +1829,13 @@ final class CallManager: ObservableObject {
         watchRoomsIfNeeded()
     }
 
-    private func shouldWatchSavedRoom(_ room: SavedRoom) -> Bool {
-        guard let host = room.host else { return true }
-        return host.compare(serverHost, options: .caseInsensitive) == .orderedSame
+    private func isCurrentServerHost(_ host: String?) -> Bool {
+        guard let h = host else { return true }
+        return h.compare(serverHost, options: .caseInsensitive) == .orderedSame
+    }
+
+    private func hostOverrideOrNull(_ host: String?) -> String? {
+        DeepLinkParser.normalizeHostValue(host).flatMap { isCurrentServerHost($0) ? nil : $0 }
     }
 
     private func watchRoomsIfNeeded() {
@@ -1820,7 +1860,7 @@ final class CallManager: ObservableObject {
         let duration = max(0, Int((nowMs - startTime) / 1000))
 
         recentCallStore.saveCall(
-            RecentCall(roomId: roomId, startTime: startTime, durationSeconds: duration)
+            RecentCall(roomId: roomId, startTime: startTime, durationSeconds: duration, host: currentSignalingHost())
         )
 
         callStartTimeMs = nil
@@ -1855,6 +1895,83 @@ final class CallManager: ObservableObject {
 
     private func shouldReconnectSignaling() -> Bool {
         currentRoomId != nil || !watchedRoomIds.isEmpty
+    }
+
+    private func clearConnectionStatusRetryingTimer() {
+        connectionStatusRetryingTask?.cancel()
+        connectionStatusRetryingTask = nil
+    }
+
+    private func setConnectionStatus(_ status: ConnectionStatus) {
+        if uiState.connectionStatus == status {
+            return
+        }
+        let previous = uiState.connectionStatus
+        updateState { $0.connectionStatus = status }
+        if previous != .retrying && status == .retrying {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        }
+    }
+
+    private func resetConnectionStatusMachine() {
+        clearConnectionStatusRetryingTimer()
+        setConnectionStatus(.connected)
+    }
+
+    private func scheduleConnectionStatusRetryingTimer() {
+        guard connectionStatusRetryingTask == nil else { return }
+
+        connectionStatusRetryingTask = Task { [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(nanoseconds: self.connectionStatusRetryingDelayNs)
+            guard !Task.isCancelled else { return }
+            guard self.uiState.phase == .inCall else {
+                self.resetConnectionStatusMachine()
+                return
+            }
+            guard self.uiState.connectionStatus == .recovering else { return }
+            self.connectionStatusRetryingTask = nil
+            self.setConnectionStatus(.retrying)
+        }
+    }
+
+    private func markConnectionDegraded() {
+        guard uiState.phase == .inCall else {
+            resetConnectionStatusMachine()
+            return
+        }
+
+        switch uiState.connectionStatus {
+        case .connected:
+            setConnectionStatus(.recovering)
+            scheduleConnectionStatusRetryingTimer()
+        case .recovering:
+            scheduleConnectionStatusRetryingTimer()
+        case .retrying:
+            break
+        }
+    }
+
+    private func updateConnectionStatusFromSignals() {
+        guard uiState.phase == .inCall else {
+            resetConnectionStatusMachine()
+            return
+        }
+
+        if isConnectionDegraded(uiState) {
+            markConnectionDegraded()
+            return
+        }
+
+        resetConnectionStatusMachine()
+    }
+
+    private func isConnectionDegraded(_ state: CallUiState) -> Bool {
+        !state.isSignalingConnected ||
+        state.iceConnectionState == "DISCONNECTED" ||
+        state.iceConnectionState == "FAILED" ||
+        state.connectionState == "DISCONNECTED" ||
+        state.connectionState == "FAILED"
     }
 
     private func updateState(_ mutate: (inout CallUiState) -> Void) {
@@ -1936,6 +2053,7 @@ final class CallManager: ObservableObject {
                     default:
                         break
                     }
+                    eventSink.updateConnectionStatusFromSignals()
                 }
             },
             onIceConnectionState: { [weak eventSink] state in
@@ -1954,6 +2072,7 @@ final class CallManager: ObservableObject {
                     default:
                         break
                     }
+                    eventSink.updateConnectionStatusFromSignals()
                 }
             },
             onSignalingState: { [weak eventSink] state in
@@ -2027,7 +2146,15 @@ final class CallManager: ObservableObject {
         pathMonitor.pathUpdateHandler = { [weak self] path in
             guard let self else { return }
             Task { @MainActor in
-                if path.status == .satisfied && self.uiState.phase == .inCall {
+                guard self.uiState.phase == .inCall else { return }
+
+                if self.isConnectionDegraded(self.uiState) {
+                    self.markConnectionDegraded()
+                }
+
+                if path.status == .satisfied {
+                    // Keep opportunistic ICE restart on network transitions so the call can
+                    // migrate to a better path without forcing degraded UI when healthy.
                     self.scheduleIceRestart(reason: "network-online", delayMs: 0)
                 }
             }
@@ -2044,8 +2171,8 @@ extension CallManager: SignalingClientListener {
         updateState {
             $0.isSignalingConnected = true
             $0.activeTransport = activeTransport
-            $0.isReconnecting = false
         }
+        updateConnectionStatusFromSignals()
 
         if let join = pendingJoinRoom {
             pendingJoinRoom = nil
@@ -2072,8 +2199,8 @@ extension CallManager: SignalingClientListener {
         updateState {
             $0.isSignalingConnected = false
             $0.activeTransport = nil
-            $0.isReconnecting = shouldReconnectSignaling()
         }
+        updateConnectionStatusFromSignals()
 
         if shouldReconnectSignaling() {
             scheduleReconnect()
