@@ -2,6 +2,13 @@ import XCTest
 @testable import SerenadaiOS
 
 final class CallScreenStateTests: XCTestCase {
+    func testPrimaryLocalVideoContentModeUsesFitForWorldAndComposite() {
+        XCTAssertEqual(primaryLocalVideoContentMode(localCameraMode: .world), .scaleAspectFit)
+        XCTAssertEqual(primaryLocalVideoContentMode(localCameraMode: .composite), .scaleAspectFit)
+        XCTAssertEqual(primaryLocalVideoContentMode(localCameraMode: .selfie), .scaleAspectFill)
+        XCTAssertEqual(primaryLocalVideoContentMode(localCameraMode: .screenShare), .scaleAspectFill)
+    }
+
     func testWaitingStateShowsSingleWaitingMessagePath() {
         XCTAssertFalse(
             shouldShowCallStatusLabel(

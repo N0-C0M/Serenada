@@ -2130,6 +2130,11 @@ final class CallManager: ObservableObject {
                     eventSink?.updateState { $0.cameraZoomFactor = zoomFactor }
                 }
             },
+            onDebugTrace: { [weak eventSink] message in
+#if DEBUG
+                eventSink?.debugTrace(message)
+#endif
+            },
             isHdVideoExperimentalEnabled: isHdVideoExperimentalEnabled
         )
     }

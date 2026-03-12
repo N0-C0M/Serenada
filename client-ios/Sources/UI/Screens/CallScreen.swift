@@ -27,6 +27,15 @@ func shouldRenderLocalAsPrimarySurface(phase: CallPhase, isLocalLarge: Bool) -> 
     phase == .inCall && isLocalLarge
 }
 
+func primaryLocalVideoContentMode(localCameraMode: LocalCameraMode) -> UIView.ContentMode {
+    switch localCameraMode {
+    case .world, .composite:
+        return .scaleAspectFit
+    case .selfie, .screenShare:
+        return .scaleAspectFill
+    }
+}
+
 func pipBottomPadding(isLandscape: Bool, areControlsVisible: Bool) -> CGFloat {
     if isLandscape {
         return areControlsVisible ? 92 : 24
@@ -289,6 +298,7 @@ struct CallScreen: View {
             } else if showLocalAsPrimarySurface {
                 mainVideoSurface(
                     kind: .local,
+                    videoContentMode: primaryLocalVideoContentMode(localCameraMode: uiState.localCameraMode),
                     showPlaceholder: shouldShowLocalVideoPlaceholder(localVideoEnabled: uiState.localVideoEnabled),
                     placeholderText: L10n.callLocalCameraOff
                 )

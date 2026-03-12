@@ -7,7 +7,7 @@ This v1 port mirrors Android/web call flow and signaling semantics:
 - WebSocket signaling with automatic SSE fallback
 - Room watch statuses for merged recent calls + saved rooms
 - Saved rooms (create, rename, remove, quick-join, share link) with Android-parity host override semantics
-- In-call camera mode cycle semantics (`selfie -> world -> composite`), with automatic composite skip
+- In-call camera mode cycle semantics (`selfie -> world -> composite`), with automatic composite skip and a circular mirrored selfie overlay in composite mode that stays aligned across portrait and landscape
 - World/composite pinch zoom (capture-level zoom)
 - Local camera default capture profile targets 480p; enabling `HD Video (experimental)` switches to highest available mode
 - ReplayKit screen-share toggle for in-call sharing

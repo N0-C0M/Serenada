@@ -356,8 +356,8 @@
 			children = (
 				D0BE7FF0C166694E0F58114A /* Assets.xcassets */,
 				E07431915F3AC5DF220F5B3A /* GoogleService-Info.plist */,
-				EA93F28D0C87ABED6B756036 /* Localizable.strings */,
 				E77A32857F53D8DEADAF2B04 /* SerenadaiOS.entitlements */,
+				EA93F28D0C87ABED6B756036 /* Localizable.strings */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -556,7 +556,6 @@
 				};
 			};
 			buildConfigurationList = 74BFC42E87C4C61AEA74CACC /* Build configuration list for PBXProject "SerenadaiOS" */;
-			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -572,6 +571,7 @@
 				B01E382DAF8A44F6B4B1BD0A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 			);
 			preferredProjectObjectVersion = 77;
+			productRefGroup = 00A34D701D66DCAB54FE6E0E /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (

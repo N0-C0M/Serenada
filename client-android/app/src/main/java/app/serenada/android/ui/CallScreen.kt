@@ -598,8 +598,8 @@ fun CallScreen(
                     ) {
                         Icon(
                             imageVector =
-                                if (uiState.isFlashEnabled) Icons.Default.FlashOn
-                                else Icons.Default.FlashOff,
+                                if (uiState.isFlashEnabled) Icons.Default.FlashlightOn
+                                else Icons.Default.FlashlightOff,
                             contentDescription = stringResource(R.string.call_toggle_flashlight),
                             tint = Color.White
                         )

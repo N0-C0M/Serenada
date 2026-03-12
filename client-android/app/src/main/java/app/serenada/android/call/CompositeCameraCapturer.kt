@@ -12,6 +12,12 @@ import org.webrtc.SurfaceTextureHelper
 import org.webrtc.VideoCapturer
 import org.webrtc.VideoFrame
 
+internal fun mirrorDisplayXInCrop(
+    displayX: Float,
+    cropLeft: Int,
+    cropSize: Int
+): Float = cropLeft.toFloat() + cropSize.toFloat() - 1f - (displayX - cropLeft.toFloat())
+
 class CompositeCameraCapturer(
     context: Context,
     private val eglContext: EglBase.Context,
@@ -305,8 +311,10 @@ class CompositeCameraCapturer(
                     rotation = outputRotation
                 ) ?: continue
 
-                val srcDisplayX =
+                val mappedSrcDisplayX =
                     srcLeft + (((displayX - left) + 0.5f) * srcSize / drawWidth.toFloat()) - 0.5f
+                // Mirror the selfie overlay so composite mode matches the normal front-camera preview.
+                val srcDisplayX = mirrorDisplayXInCrop(mappedSrcDisplayX, srcLeft, srcSize)
                 val srcDisplayY =
                     srcTop + (((displayY - top) + 0.5f) * srcSize / drawHeight.toFloat()) - 0.5f
                 val srcBufferCoord = displayToBufferCoordFloat(
@@ -367,8 +375,9 @@ class CompositeCameraCapturer(
                 val outputUvX = (outputLumaCoord.first / 2).coerceIn(0, (outputWidth / 2) - 1)
                 val outputUvY = (outputLumaCoord.second / 2).coerceIn(0, (outputHeight / 2) - 1)
 
-                val srcDisplayLumaX =
+                val mappedSrcDisplayLumaX =
                     srcLeft + (((displayLumaX - left) + 0.5f) * srcSize / drawWidth.toFloat()) - 0.5f
+                val srcDisplayLumaX = mirrorDisplayXInCrop(mappedSrcDisplayLumaX, srcLeft, srcSize)
                 val srcDisplayLumaY =
                     srcTop + (((displayLumaY - top) + 0.5f) * srcSize / drawHeight.toFloat()) - 0.5f
                 val srcLumaCoord = displayToBufferCoordFloat(
