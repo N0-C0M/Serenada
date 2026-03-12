@@ -9,6 +9,7 @@ import { saveCall } from '../utils/callHistory';
 import { useTranslation } from 'react-i18next';
 import { playJoinChime } from '../utils/audio';
 import { getOrCreatePushKeyPair } from '../utils/pushCrypto';
+import { getPersistedRemoteVideoFit, persistRemoteVideoFit, type RemoteVideoFit } from '../utils/remoteVideoFit';
 import { saveRoom, markRoomJoined, type SaveRoomResult } from '../utils/savedRooms';
 import { buildDebugPanelSections, useRealtimeCallStats } from './callDiagnostics';
 import { SNAPSHOT_PREPARE_TIMEOUT_MS } from '../constants/webrtcResilience';
@@ -236,7 +237,7 @@ const CallRoom: React.FC = () => {
     const [isCameraOff, setIsCameraOff] = useState(false);
     const [areControlsVisible, setAreControlsVisible] = useState(true);
     const [isLocalLarge, setIsLocalLarge] = useState(false);
-    const [remoteVideoFit, setRemoteVideoFit] = useState<'cover' | 'contain'>('cover');
+    const [remoteVideoFit, setRemoteVideoFit] = useState<RemoteVideoFit>(() => getPersistedRemoteVideoFit());
     const [showRecoveringBadge, setShowRecoveringBadge] = useState(false);
     const [showWaiting, setShowWaiting] = useState(true);
 
@@ -787,7 +788,11 @@ const CallRoom: React.FC = () => {
 
     const toggleRemoteVideoFit = (e: React.PointerEvent | React.MouseEvent) => {
         e.stopPropagation();
-        setRemoteVideoFit(prev => prev === 'cover' ? 'contain' : 'cover');
+        setRemoteVideoFit(prev => {
+            const next = prev === 'cover' ? 'contain' : 'cover';
+            persistRemoteVideoFit(next);
+            return next;
+        });
     };
 
     // Render Pre-Join

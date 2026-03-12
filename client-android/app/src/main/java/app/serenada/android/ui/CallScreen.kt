@@ -73,6 +73,7 @@ import app.serenada.android.call.CallUiState
 import app.serenada.android.call.ConnectionStatus
 import app.serenada.android.call.LocalCameraMode
 import app.serenada.android.call.RealtimeCallStats
+import app.serenada.android.data.SettingsStore
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -118,6 +119,8 @@ fun CallScreen(
 ) {
     // Keep the screen on for the duration of the call
     val activity = LocalContext.current as? Activity
+    val appContext = LocalContext.current.applicationContext
+    val settingsStore = remember(appContext) { SettingsStore(appContext) }
     DisposableEffect(Unit) {
         activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         onDispose {
@@ -129,7 +132,7 @@ fun CallScreen(
     var isControlsAutoHideEnabled by remember { mutableStateOf(true) }
     var wereControlsLastHiddenByAutoHide by remember { mutableStateOf(false) }
     var isLocalLarge by rememberSaveable { mutableStateOf(false) }
-    var remoteVideoFitCover by rememberSaveable { mutableStateOf(true) }
+    var remoteVideoFitCover by rememberSaveable { mutableStateOf(settingsStore.isRemoteVideoFitCover) }
     var lastFrontCameraState by remember { mutableStateOf(uiState.isFrontCamera) }
     var localAspectRatio by remember { mutableStateOf<Float?>(null) }
     var remoteAspectRatio by remember { mutableStateOf<Float?>(null) }
@@ -605,7 +608,11 @@ fun CallScreen(
 
                 if (showRemoteFitButton) {
                     IconButton(
-                        onClick = { remoteVideoFitCover = !remoteVideoFitCover },
+                        onClick = {
+                            val next = !remoteVideoFitCover
+                            remoteVideoFitCover = next
+                            settingsStore.isRemoteVideoFitCover = next
+                        },
                         modifier =
                             Modifier.size(44.dp)
                                 .background(Color.Black.copy(alpha = 0.4f), CircleShape)

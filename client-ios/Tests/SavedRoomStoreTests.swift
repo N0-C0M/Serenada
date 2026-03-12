@@ -60,3 +60,40 @@ final class SavedRoomStoreTests: XCTestCase {
         XCTAssertEqual(room?.host, "example.com:444")
     }
 }
+
+final class SettingsStoreTests: XCTestCase {
+    private var defaults: UserDefaults!
+    private var suiteName: String!
+    private var store: SettingsStore!
+
+    override func setUp() {
+        super.setUp()
+        suiteName = "SettingsStoreTests-\(UUID().uuidString)"
+        defaults = UserDefaults(suiteName: suiteName)
+        defaults.removePersistentDomain(forName: defaultsSuiteName)
+        store = SettingsStore(defaults: defaults)
+    }
+
+    override func tearDown() {
+        defaults.removePersistentDomain(forName: defaultsSuiteName)
+        defaults = nil
+        suiteName = nil
+        store = nil
+        super.tearDown()
+    }
+
+    private var defaultsSuiteName: String {
+        suiteName ?? ""
+    }
+
+    func testRemoteVideoFitDefaultsToCover() {
+        XCTAssertTrue(store.isRemoteVideoFitCover)
+    }
+
+    func testRemoteVideoFitPersistsAcrossStoreInstances() {
+        store.isRemoteVideoFitCover = false
+
+        let reloaded = SettingsStore(defaults: defaults)
+        XCTAssertFalse(reloaded.isRemoteVideoFitCover)
+    }
+}

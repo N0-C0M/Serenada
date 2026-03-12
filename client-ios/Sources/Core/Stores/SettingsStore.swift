@@ -11,6 +11,7 @@ final class SettingsStore {
         static let hdVideoExperimentalEnabled = "hd_video_experimental_enabled"
         static let savedRoomsShownFirst = "saved_rooms_shown_first"
         static let roomInviteNotificationsEnabled = "room_invite_notifications_enabled"
+        static let remoteVideoFitCover = "remote_video_fit_cover"
     }
 
     private let defaults: UserDefaults
@@ -113,6 +114,16 @@ final class SettingsStore {
         }
         set {
             defaults.set(newValue, forKey: Key.roomInviteNotificationsEnabled)
+        }
+    }
+
+    var isRemoteVideoFitCover: Bool {
+        get {
+            if defaults.object(forKey: Key.remoteVideoFitCover) == nil { return true }
+            return defaults.bool(forKey: Key.remoteVideoFitCover)
+        }
+        set {
+            defaults.set(newValue, forKey: Key.remoteVideoFitCover)
         }
     }
 

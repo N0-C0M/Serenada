@@ -32,11 +32,11 @@ final class RecentCallStoreTests: XCTestCase {
         let r3 = String(repeating: "C", count: 27)
         let r4 = String(repeating: "D", count: 27)
 
-        store.saveCall(RecentCall(roomId: r1, startTime: 1000, durationSeconds: 1))
-        store.saveCall(RecentCall(roomId: r2, startTime: 2000, durationSeconds: 2))
-        store.saveCall(RecentCall(roomId: r3, startTime: 3000, durationSeconds: 3))
-        store.saveCall(RecentCall(roomId: r2, startTime: 4000, durationSeconds: 4))
-        store.saveCall(RecentCall(roomId: r4, startTime: 5000, durationSeconds: 5))
+        store.saveCall(RecentCall(roomId: r1, startTime: 1000, durationSeconds: 1, host: nil))
+        store.saveCall(RecentCall(roomId: r2, startTime: 2000, durationSeconds: 2, host: nil))
+        store.saveCall(RecentCall(roomId: r3, startTime: 3000, durationSeconds: 3, host: nil))
+        store.saveCall(RecentCall(roomId: r2, startTime: 4000, durationSeconds: 4, host: nil))
+        store.saveCall(RecentCall(roomId: r4, startTime: 5000, durationSeconds: 5, host: nil))
 
         let calls = store.getRecentCalls()
         XCTAssertEqual(calls.count, 3)
@@ -46,7 +46,7 @@ final class RecentCallStoreTests: XCTestCase {
     }
 
     func testInvalidRoomIdIsRejected() {
-        store.saveCall(RecentCall(roomId: "bad", startTime: 1000, durationSeconds: 1))
+        store.saveCall(RecentCall(roomId: "bad", startTime: 1000, durationSeconds: 1, host: nil))
         XCTAssertTrue(store.getRecentCalls().isEmpty)
     }
 }

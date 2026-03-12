@@ -224,19 +224,53 @@ struct CallScreen: View {
     let onEndCall: () -> Void
     let onInviteToRoom: () async -> Result<Void, Error>
     let callManager: CallManager
+    private let settingsStore: SettingsStore
 
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var areControlsVisible = true
     @State private var isControlsAutoHideEnabled = true
     @State private var wereControlsLastHiddenByAutoHide = false
     @State private var isLocalLarge = false
-    @State private var remoteVideoFitCover = true
+    @State private var remoteVideoFitCover: Bool
     @State private var showShareSheet = false
     @State private var inviteStatusMessage: String?
     @State private var showDebugPanel = false
     @State private var lastDebugTapAt: Date?
     @State private var lastMagnificationValue: CGFloat = 1
     @State private var showRecoveringBadge = false
+
+    init(
+        roomId: String,
+        uiState: CallUiState,
+        serverHost: String,
+        onToggleAudio: @escaping () -> Void,
+        onToggleVideo: @escaping () -> Void,
+        onFlipCamera: @escaping () -> Void,
+        onToggleScreenShare: @escaping () -> Void,
+        onAdjustCameraZoom: @escaping (CGFloat) -> Void,
+        onResetCameraZoom: @escaping () -> Void,
+        onToggleFlashlight: @escaping () -> Void,
+        onEndCall: @escaping () -> Void,
+        onInviteToRoom: @escaping () async -> Result<Void, Error>,
+        callManager: CallManager,
+        settingsStore: SettingsStore = SettingsStore()
+    ) {
+        self.roomId = roomId
+        self.uiState = uiState
+        self.serverHost = serverHost
+        self.onToggleAudio = onToggleAudio
+        self.onToggleVideo = onToggleVideo
+        self.onFlipCamera = onFlipCamera
+        self.onToggleScreenShare = onToggleScreenShare
+        self.onAdjustCameraZoom = onAdjustCameraZoom
+        self.onResetCameraZoom = onResetCameraZoom
+        self.onToggleFlashlight = onToggleFlashlight
+        self.onEndCall = onEndCall
+        self.onInviteToRoom = onInviteToRoom
+        self.callManager = callManager
+        self.settingsStore = settingsStore
+        _remoteVideoFitCover = State(initialValue: settingsStore.isRemoteVideoFitCover)
+    }
 
     var body: some View {
         let showLocalAsPrimarySurface = shouldRenderLocalAsPrimarySurface(
@@ -298,6 +332,9 @@ struct CallScreen: View {
             if status != .recovering {
                 showRecoveringBadge = false
             }
+        }
+        .onChange(of: remoteVideoFitCover) { value in
+            settingsStore.isRemoteVideoFitCover = value
         }
         .task(id: uiState.connectionStatus == .recovering && uiState.phase == .inCall) {
             guard uiState.connectionStatus == .recovering, uiState.phase == .inCall else { return }
