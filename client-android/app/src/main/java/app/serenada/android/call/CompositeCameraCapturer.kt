@@ -1,7 +1,10 @@
 package app.serenada.android.call
 
 import android.content.Context
+import android.util.Log
 import java.nio.ByteBuffer
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.math.floor
 import kotlin.math.min
 import org.webrtc.CameraVideoCapturer
@@ -45,6 +48,7 @@ class CompositeCameraCapturer(
     private var overlayStartResult: Boolean? = null
     private var startReported = false
     private var started = false
+    private var childStopTimedOut = false
 
     private val mainObserver = object : CapturerObserver {
         override fun onCapturerStarted(success: Boolean) {
@@ -125,8 +129,7 @@ class CompositeCameraCapturer(
 
     override fun stopCapture() {
         if (!started) return
-        runCatching { overlayCapturer.stopCapture() }
-        runCatching { mainCapturer.stopCapture() }
+        childStopTimedOut = !stopChildCapturersWithTimeout()
         started = false
         mainStartResult = null
         overlayStartResult = null
@@ -141,14 +144,19 @@ class CompositeCameraCapturer(
 
     override fun dispose() {
         runCatching { stopCapture() }
-        mainCapturer.dispose()
-        overlayCapturer.dispose()
+        if (childStopTimedOut) {
+            Log.w("CompositeCameraCapturer", "Skipping synchronous child dispose after stop timeout")
+        } else {
+            mainCapturer.dispose()
+            overlayCapturer.dispose()
+        }
         overlayTextureHelper?.dispose()
         overlayTextureHelper = null
         synchronized(frameLock) {
             latestOverlayFrame?.buffer?.release()
             latestOverlayFrame = null
         }
+        childStopTimedOut = false
         outputObserver = null
     }
 
@@ -185,10 +193,39 @@ class CompositeCameraCapturer(
             startReported = true
         }
         started = false
-        runCatching { overlayCapturer.stopCapture() }
-        runCatching { mainCapturer.stopCapture() }
+        childStopTimedOut = !stopChildCapturersWithTimeout()
         outputObserver?.onCapturerStarted(false)
         onStartFailure?.invoke()
+    }
+
+    private fun stopChildCapturersWithTimeout(): Boolean {
+        val latch = CountDownLatch(2)
+        val overlayThread = Thread {
+            runCatching { overlayCapturer.stopCapture() }
+            latch.countDown()
+        }.apply { name = "CompositeOverlayStop" }
+        val mainThread = Thread {
+            runCatching { mainCapturer.stopCapture() }
+            latch.countDown()
+        }.apply { name = "CompositeMainStop" }
+        overlayThread.start()
+        mainThread.start()
+        val stopped = try {
+            latch.await(STOP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        } catch (e: InterruptedException) {
+            overlayThread.interrupt()
+            mainThread.interrupt()
+            Thread.currentThread().interrupt()
+            false
+        }
+        if (!stopped) {
+            overlayThread.interrupt()
+            mainThread.interrupt()
+            runCatching { overlayThread.join(STOP_INTERRUPT_GRACE_MS) }
+            runCatching { mainThread.join(STOP_INTERRUPT_GRACE_MS) }
+            Log.w("CompositeCameraCapturer", "Timed out waiting for child capturers to stop")
+        }
+        return stopped
     }
 
     private fun composeFrame(mainFrame: VideoFrame): VideoFrame {
@@ -588,6 +625,8 @@ class CompositeCameraCapturer(
     }
 
     private companion object {
+        const val STOP_TIMEOUT_MS = 3000L
+        const val STOP_INTERRUPT_GRACE_MS = 100L
         const val OVERLAY_DIAMETER_RATIO = 0.36f
         const val OVERLAY_BOTTOM_MARGIN_RATIO = 0.04f
         const val MIN_OVERLAY_SIZE = 72

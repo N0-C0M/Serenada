@@ -1,7 +1,8 @@
 package app.serenada.android.call
 
-import android.content.Intent
 import android.content.Context
+import android.content.Intent
+import android.content.SharedPreferences
 import android.graphics.Rect
 import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraCaptureSession
@@ -186,7 +187,19 @@ class WebRtcEngine(
     private var desiredCameraZoomRatio = 1f
     private var appliedCameraZoomRatio = 1f
     private var compositeSupportCache: Pair<Pair<String, String>, Boolean>? = null
-    private var compositeDisabledAfterFailure = false
+    private val compositePrefs: SharedPreferences =
+        appContext.getSharedPreferences("serenada_webrtc", Context.MODE_PRIVATE)
+    private var compositeDisabledAfterFailure: Boolean
+        get() {
+            if (compositePrefs.getInt(KEY_COMPOSITE_DISABLED_VERSION, -1) != BuildConfig.VERSION_CODE) return false
+            return compositePrefs.getBoolean(KEY_COMPOSITE_DISABLED, false)
+        }
+        set(value) {
+            compositePrefs.edit()
+                .putBoolean(KEY_COMPOSITE_DISABLED, value)
+                .putInt(KEY_COMPOSITE_DISABLED_VERSION, BuildConfig.VERSION_CODE)
+                .apply()
+        }
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private val localSinks = LinkedHashSet<VideoSink>()
@@ -1339,7 +1352,26 @@ class WebRtcEngine(
             return false
         }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-            // API < 30 has no stable concurrent-camera query API, so allow trial.
+            // API < 30 has no concurrent-camera query API. Use hardware level as a proxy:
+            // only FULL and LEVEL_3 devices have any chance of concurrent camera operation.
+            val manager = appContext.getSystemService(CameraManager::class.java) ?: return false
+            val capable = setOf(
+                CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_FULL,
+                CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_3
+            )
+            val frontLevel = runCatching {
+                manager.getCameraCharacteristics(frontDevice)
+                    .get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL)
+            }.getOrNull()
+            val backLevel = runCatching {
+                manager.getCameraCharacteristics(backDevice)
+                    .get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL)
+            }.getOrNull()
+            if (frontLevel !in capable || backLevel !in capable) {
+                Log.d("WebRtcEngine",
+                    "Composite source skipped on API <30: hardware level insufficient (front=$frontLevel back=$backLevel)")
+                return false
+            }
             return true
         }
         val cacheKey = Pair(frontDevice, backDevice)
@@ -2260,6 +2292,9 @@ class WebRtcEngine(
 
     private companion object {
         val WEBRTC_LOGGING_ENABLED = AtomicBoolean(false)
+
+        const val KEY_COMPOSITE_DISABLED = "composite_disabled_after_failure"
+        const val KEY_COMPOSITE_DISABLED_VERSION = "composite_disabled_version"
 
         const val LEGACY_CAMERA_WIDTH = 640
         const val LEGACY_CAMERA_HEIGHT = 480
