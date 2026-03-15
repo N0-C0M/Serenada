@@ -74,18 +74,23 @@ type Participant struct {
 }
 
 type Hub struct {
-	rooms        map[string]*Room
-	watchers     map[string]map[*Client]bool // roomID -> set of clients
-	mu           sync.RWMutex
-	clients      map[*Client]bool
-	clientsBySID map[string]*Client
+	rooms                map[string]*Room
+	watchers             map[string]map[*Client]bool // roomID -> set of clients
+	mu                   sync.RWMutex
+	clients              map[*Client]bool
+	clientsBySID         map[string]*Client
+	maxParticipantsLimit int // server-wide ceiling for room capacity
 }
 
 type Room struct {
-	RID          string
-	Participants map[*Client]string // client -> cid
-	HostCID      string
-	mu           sync.Mutex
+	RID                      string
+	Participants             map[*Client]string // client -> cid
+	HostCID                  string
+	MaxParticipants          int              // effective room capacity; group-capable rooms stay provisional at 2 until participant #2 joins
+	RequestedMaxParticipants int              // creator's requested ceiling, clamped by creator capability and server ceiling
+	CapacityLocked           bool             // once true, MaxParticipants is final for the room lifetime
+	JoinedAt                 map[string]int64 // cid -> join timestamp (ms)
+	mu                       sync.Mutex
 }
 
 type Client struct {
@@ -100,12 +105,16 @@ type Client struct {
 	transport TransportKind
 }
 
-func newHub() *Hub {
+func newHub(maxParticipantsLimit int) *Hub {
+	if maxParticipantsLimit < 2 {
+		maxParticipantsLimit = 2
+	}
 	return &Hub{
-		rooms:        make(map[string]*Room),
-		watchers:     make(map[string]map[*Client]bool),
-		clients:      make(map[*Client]bool),
-		clientsBySID: make(map[string]*Client),
+		rooms:                make(map[string]*Room),
+		watchers:             make(map[string]map[*Client]bool),
+		clients:              make(map[*Client]bool),
+		clientsBySID:         make(map[string]*Client),
+		maxParticipantsLimit: maxParticipantsLimit,
 	}
 }
 
@@ -271,22 +280,14 @@ func (h *Hub) handleJoin(c *Client, msg Message) {
 		return
 	}
 
-	h.mu.Lock()
-	room, exists := h.rooms[rid]
-	if !exists {
-		log.Printf("[JOIN] Creating new room %s", rid)
-		room = &Room{
-			RID:          rid,
-			Participants: make(map[*Client]string),
-		}
-		h.rooms[rid] = room
-	}
-	h.mu.Unlock()
-
-	room.mu.Lock()
+	// Parse join payload before acquiring locks
 	var joinPayload struct {
-		ReconnectCID   string `json:"reconnectCid"`
-		ReconnectToken string `json:"reconnectToken"`
+		ReconnectCID          string `json:"reconnectCid"`
+		ReconnectToken        string `json:"reconnectToken"`
+		CreateMaxParticipants int    `json:"createMaxParticipants"`
+		Capabilities          struct {
+			MaxParticipants int `json:"maxParticipants"`
+		} `json:"capabilities"`
 	}
 	if len(msg.Payload) > 0 {
 		if err := json.Unmarshal(msg.Payload, &joinPayload); err != nil {
@@ -294,8 +295,52 @@ func (h *Hub) handleJoin(c *Client, msg Message) {
 		}
 	}
 
+	// Client capability: largest room size this client supports (default 2 for legacy)
+	clientMaxParticipants := joinPayload.Capabilities.MaxParticipants
+	if clientMaxParticipants < 2 {
+		clientMaxParticipants = 2
+	}
+
+	// Requested room capacity for new rooms (default 2, clamped to client capability and server ceiling)
+	createMax := joinPayload.CreateMaxParticipants
+	if createMax < 2 {
+		createMax = 2
+	}
+	if createMax > clientMaxParticipants {
+		createMax = clientMaxParticipants
+	}
+	if createMax > h.maxParticipantsLimit {
+		createMax = h.maxParticipantsLimit
+	}
+
 	reconnectCID := joinPayload.ReconnectCID
 	reconnectToken := joinPayload.ReconnectToken
+
+	h.mu.Lock()
+	room, exists := h.rooms[rid]
+	if !exists {
+		roomMaxParticipants := createMax
+		capacityLocked := true
+		if roomMaxParticipants > 2 {
+			// Keep group-capable rooms joinable by legacy clients until the second
+			// distinct participant locks the final room capacity.
+			roomMaxParticipants = 2
+			capacityLocked = false
+		}
+		log.Printf("[JOIN] Creating new room %s (maxParticipants=%d requestedMaxParticipants=%d locked=%t)", rid, roomMaxParticipants, createMax, capacityLocked)
+		room = &Room{
+			RID:                      rid,
+			Participants:             make(map[*Client]string),
+			MaxParticipants:          roomMaxParticipants,
+			RequestedMaxParticipants: createMax,
+			CapacityLocked:           capacityLocked,
+			JoinedAt:                 make(map[string]int64),
+		}
+		h.rooms[rid] = room
+	}
+	h.mu.Unlock()
+
+	room.mu.Lock()
 	reusedCID := false
 
 	// Single-pass ghost eviction: find ghost client with reconnectCID, mark for removal under room lock
@@ -328,10 +373,31 @@ func (h *Hub) handleJoin(c *Client, msg Message) {
 		}
 	}
 
-	// Room full check (after ghost eviction)
-	if len(room.Participants) >= 2 {
+	if !room.CapacityLocked && len(room.Participants) == 1 {
+		lockedMaxParticipants := room.RequestedMaxParticipants
+		if lockedMaxParticipants < 2 {
+			lockedMaxParticipants = 2
+		}
+		if clientMaxParticipants < lockedMaxParticipants {
+			lockedMaxParticipants = clientMaxParticipants
+		}
+		room.MaxParticipants = lockedMaxParticipants
+		room.CapacityLocked = true
+		log.Printf("[JOIN] Room %s capacity locked at %d after second participant %s (client cap=%d, requested=%d)", rid, room.MaxParticipants, c.sid, clientMaxParticipants, room.RequestedMaxParticipants)
+	}
+
+	// Reject clients that don't support this room's capacity once it's finalized.
+	if clientMaxParticipants < room.MaxParticipants {
 		room.mu.Unlock()
-		log.Printf("[JOIN] Room %s is full", rid)
+		log.Printf("[JOIN] Client %s (cap=%d) cannot join room %s (maxParticipants=%d)", c.sid, clientMaxParticipants, rid, room.MaxParticipants)
+		c.sendError(rid, "ROOM_CAPACITY_UNSUPPORTED", "This client does not support group calls")
+		return
+	}
+
+	// Room full check (after ghost eviction / capacity negotiation)
+	if len(room.Participants) >= room.MaxParticipants {
+		room.mu.Unlock()
+		log.Printf("[JOIN] Room %s is full (%d/%d)", rid, len(room.Participants), room.MaxParticipants)
 		c.sendError(rid, "ROOM_FULL", "Room is full")
 		return
 	}
@@ -341,9 +407,9 @@ func (h *Hub) handleJoin(c *Client, msg Message) {
 		room.mu.Unlock()
 		h.cleanupEvictedClient(ghostToEvict)
 		room.mu.Lock()
-		if len(room.Participants) >= 2 {
+		if len(room.Participants) >= room.MaxParticipants {
 			room.mu.Unlock()
-			log.Printf("[JOIN] Room %s is full after ghost cleanup", rid)
+			log.Printf("[JOIN] Room %s is full after ghost cleanup (%d/%d)", rid, len(room.Participants), room.MaxParticipants)
 			c.sendError(rid, "ROOM_FULL", "Room is full")
 			return
 		}
@@ -357,23 +423,30 @@ func (h *Hub) handleJoin(c *Client, msg Message) {
 	c.rid = rid
 	room.Participants[c] = cid
 
+	// Track stable join time (preserve on reconnect)
+	if _, hasJoinTime := room.JoinedAt[cid]; !hasJoinTime {
+		room.JoinedAt[cid] = time.Now().UnixMilli()
+	}
+
 	if room.HostCID == "" {
 		room.HostCID = cid
 	}
 
-	log.Printf("[JOIN] Client %s assigned CID %s in room %s. Host: %s", c.sid, cid, rid, room.HostCID)
+	log.Printf("[JOIN] Client %s assigned CID %s in room %s (maxParticipants=%d). Host: %s", c.sid, cid, rid, room.MaxParticipants, room.HostCID)
 
 	// Send 'joined'
 	participants := []Participant{}
 	for _, id := range room.Participants {
-		participants = append(participants, Participant{CID: id, JoinedAt: time.Now().UnixMilli()})
+		participants = append(participants, Participant{CID: id, JoinedAt: room.JoinedAt[id]})
 	}
+	roomMaxParticipants := room.MaxParticipants
 
 	room.mu.Unlock() // <--- CRITICAL FIX: Unlock before broadcast/send to avoid deadlock/blocking
 
 	payload := map[string]interface{}{
-		"hostCid":      room.HostCID,
-		"participants": participants,
+		"hostCid":         room.HostCID,
+		"participants":    participants,
+		"maxParticipants": roomMaxParticipants,
 	}
 
 	// Include TURN token in joined response (gated by valid room ID)
@@ -633,6 +706,7 @@ func (h *Hub) removeClientFromRoom(c *Client) {
 	rid := c.rid // Store RID for broadcast
 	room.mu.Lock()
 	delete(room.Participants, c)
+	delete(room.JoinedAt, c.cid)
 	log.Printf("[REMOVE_FROM_ROOM] Client %s (CID: %s) removed from room %s. Remaining participants: %d", c.sid, c.cid, c.rid, len(room.Participants))
 
 	// Manage Host
@@ -676,10 +750,11 @@ func (h *Hub) broadcastRoomState(room *Room) {
 	room.mu.Lock()
 	participants := []Participant{}
 	for _, cid := range room.Participants {
-		participants = append(participants, Participant{CID: cid})
+		participants = append(participants, Participant{CID: cid, JoinedAt: room.JoinedAt[cid]})
 	}
 	hostCid := room.HostCID
 	rid := room.RID
+	roomMaxParticipants := room.MaxParticipants
 	// Collect clients
 	clients := make([]*Client, 0, len(room.Participants))
 	for client := range room.Participants {
@@ -688,8 +763,9 @@ func (h *Hub) broadcastRoomState(room *Room) {
 	room.mu.Unlock()
 
 	payload := map[string]interface{}{
-		"hostCid":      hostCid,
-		"participants": participants,
+		"hostCid":         hostCid,
+		"participants":    participants,
+		"maxParticipants": roomMaxParticipants,
 	}
 	payloadBytes, _ := json.Marshal(payload)
 
@@ -797,7 +873,7 @@ func (h *Hub) handleWatchRooms(c *Client, msg Message) {
 	}
 
 	h.mu.Lock()
-	status := make(map[string]int)
+	status := make(map[string]map[string]int)
 	for _, rid := range payload.RIDs {
 		if err := validateRoomID(rid); err != nil {
 			continue
@@ -811,10 +887,15 @@ func (h *Hub) handleWatchRooms(c *Client, msg Message) {
 		// Get current count
 		if room, ok := h.rooms[rid]; ok {
 			room.mu.Lock()
-			status[rid] = len(room.Participants)
+			status[rid] = map[string]int{
+				"count":           len(room.Participants),
+				"maxParticipants": room.MaxParticipants,
+			}
 			room.mu.Unlock()
 		} else {
-			status[rid] = 0
+			status[rid] = map[string]int{
+				"count": 0,
+			}
 		}
 	}
 	h.mu.Unlock()
@@ -837,17 +918,23 @@ func (h *Hub) broadcastRoomStatusUpdate(rid string) {
 
 	// Get current count
 	count := 0
+	maxParticipants := 0
 	if room, ok := h.rooms[rid]; ok {
 		room.mu.Lock()
 		count = len(room.Participants)
+		maxParticipants = room.MaxParticipants
 		room.mu.Unlock()
 	}
 	h.mu.RUnlock()
 
-	payload, _ := json.Marshal(map[string]interface{}{
+	payloadMap := map[string]interface{}{
 		"rid":   rid,
 		"count": count,
-	})
+	}
+	if maxParticipants > 0 {
+		payloadMap["maxParticipants"] = maxParticipants
+	}
+	payload, _ := json.Marshal(payloadMap)
 
 	msg := Message{
 		V:       1,

@@ -1,6 +1,6 @@
 # Serenada
 
-A simple, privacy-focused 1:1 video calling application built with WebRTC. No accounts, no tracking, just instant video calls.
+A simple, privacy-focused video calling application built with WebRTC. No accounts, no tracking, just instant calls with up to 4 participants.
 
 [![License](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](LICENSE)
 
@@ -10,14 +10,15 @@ A simple, privacy-focused 1:1 video calling application built with WebRTC. No ac
 - **No accounts required** – Just open and call
 - **Privacy-first** – No tracking, no analytics, end-to-end encrypted peer-to-peer video
 - **Resilient signaling** – WebSocket with SSE fallback when WS is blocked
-- **Mobile-friendly** – Works on Android Chrome, iOS Safari, and desktop browsers
+- **Adaptive multi-party rooms** – New-capable clients create group-capable rooms by default, with legacy-first rooms still capped at 2 participants
+- **Mobile-friendly** – Works on Android Chrome, iOS Safari, desktop browsers, and native Android/iOS clients
 - **Desktop screen sharing (web)** – In-call screen share control on desktop browsers that support `getDisplayMedia` (not shown on mobile browsers)
 - **Recent calls on home** – Web and Android home screens show your latest calls with live room occupancy (Android supports long-press remove)
 - **Android saved rooms** – Name and pin rooms on home, choose whether they appear above or below recent calls, and create links that add named rooms on recipient devices
 - **Android camera source cycle** – In-call source switch cycles through `selfie` (default) -> `world` -> `composite` (world feed with circular selfie overlay), automatically skips `composite` when unsupported, and shows a flashlight toggle in `world`/`composite` when flash hardware is available; flashlight preference is remembered during the call and reapplied when returning to supported modes
 - **Android world/composite pinch zoom** – When local video is the large in-call view in `world` or `composite`, pinch gesture zooms the camera capture itself so both local preview and the remote participant see the zoomed detail
 - **Android HD video toggle (experimental)** – Settings include an `HD Video (experimental)` switch for higher camera/composite quality; default mode keeps legacy `640x480` camera constraints for stability
-- **iOS native client (SwiftUI)** – Native iOS app in `client-ios/` mirrors Android parity flow: saved rooms + recents ordering, structured deep-link parsing, invite push toggle, encrypted push snapshots, waiting-room invite action, diagnostics screen, mode-based camera cycle with composite fallback, world/composite pinch zoom, ReplayKit screen share toggle, and in-call realtime stats/debug panel
+- **iOS native client (SwiftUI)** – Native iOS app in `client-ios/` mirrors Android parity flow: saved rooms + recents ordering, structured deep-link parsing, invite push toggle, encrypted push snapshots, waiting-room invite action, adaptive multi-party layout with local PIP, diagnostics screen, mode-based camera cycle with composite fallback, world/composite pinch zoom, ReplayKit screen share toggle, and in-call realtime stats/debug panel
 - **Self-hostable** – Run your own instance with full control
 - **Optional join alerts** – Encrypted push notifications with snapshot previews (web + native Android + native iOS)
 - **Room invite push** – In waiting state you can explicitly invite subscribers of the room; Android and iOS show these only for saved rooms and have a Settings toggle to disable invite notifications

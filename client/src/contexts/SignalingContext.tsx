@@ -3,6 +3,7 @@ import { useToast } from './ToastContext';
 import { createSignalingTransport } from './signaling/transports';
 import type { TransportKind } from './signaling/transports';
 import type { RoomState, SignalingMessage } from './signaling/types';
+import type { RoomStatuses } from './signaling/roomStatuses';
 import { getConfiguredTransportOrder, parseTransportOrder } from './signaling/transportConfig';
 import { mergeRoomStatusesPayload, mergeRoomStatusUpdatePayload } from './signaling/roomStatuses';
 import { useTranslation } from 'react-i18next';
@@ -25,8 +26,8 @@ interface SignalingContextValue {
     roomState: RoomState | null;
     turnToken: string | null;
     turnTokenTTLMs: number | null;
-    joinRoom: (roomId: string) => void;
-    leaveRoom: () => void;
+    joinRoom: (roomId: string, options?: { createMaxParticipants?: number }) => void;
+    leaveRoom: (options?: { preserveReconnectState?: boolean }) => void;
     endRoom: () => void;
     sendMessage: (type: string, payload?: any, to?: string) => void;
     lastMessage: SignalingMessage | null;
@@ -34,7 +35,7 @@ interface SignalingContextValue {
     error: string | null;
     clearError: () => void;
     watchRooms: (rids: string[]) => void;
-    roomStatuses: Record<string, number>;
+    roomStatuses: RoomStatuses;
 }
 
 const SignalingContext = createContext<SignalingContextValue | null>(null);
@@ -54,7 +55,7 @@ export const SignalingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const [roomState, setRoomState] = useState<RoomState | null>(null);
     const [lastMessage, setLastMessage] = useState<SignalingMessage | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [roomStatuses, setRoomStatuses] = useState<Record<string, number>>({});
+    const [roomStatuses, setRoomStatuses] = useState<RoomStatuses>({});
     const [turnToken, setTurnToken] = useState<string | null>(null);
     const [turnTokenTTLMs, setTurnTokenTTLMs] = useState<number | null>(null);
     const { showToast } = useToast();
@@ -88,6 +89,7 @@ export const SignalingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const reconnectStorageKey = 'serenada.reconnectCid';
     const reconnectTokenStorageKey = 'serenada.reconnectToken';
     const reconnectTokenRoomStorageKey = 'serenada.reconnectTokenRoom';
+    const lastCreateMaxParticipantsRef = useRef<number | undefined>(undefined);
 
     const clearReconnectStorage = useCallback(() => {
         try {
@@ -284,7 +286,7 @@ export const SignalingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         };
     }, [isConnected, sendMessage]);
 
-    const joinRoom = useCallback((roomId: string) => {
+    const joinRoom = useCallback((roomId: string, options?: { createMaxParticipants?: number }) => {
         console.log(`[Signaling] joinRoom call for ${roomId}`);
         setError(null);
         clearJoinTimers();
@@ -294,8 +296,16 @@ export const SignalingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const attemptId = joinAttemptIdRef.current;
         joinAckedRef.current = false;
 
+        // Remember the requested capacity so reconnect/rejoin replays don't downgrade
+        if (options?.createMaxParticipants !== undefined) {
+            lastCreateMaxParticipantsRef.current = options.createMaxParticipants;
+        }
+
         if (transportRef.current && transportRef.current.isOpen()) {
-            const payload: any = { capabilities: { trickleIce: true } };
+            const payload: any = {
+                capabilities: { trickleIce: true, maxParticipants: 4 },
+                createMaxParticipants: options?.createMaxParticipants ?? lastCreateMaxParticipantsRef.current ?? 2,
+            };
             // If we have a previous client ID, send it to help server evict ghosts
             const reconnectCid = clientIdRef.current || lastClientIdRef.current;
             if (reconnectCid) {
@@ -524,13 +534,20 @@ export const SignalingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     const clearError = useCallback(() => setError(null), []);
 
-    const leaveRoom = useCallback(() => {
+    const leaveRoom = useCallback((options?: { preserveReconnectState?: boolean }) => {
+        const preserveReconnectState = options?.preserveReconnectState === true;
         clearJoinTimers();
         sendMessage('leave');
         currentRoomIdRef.current = null;
-        lastClientIdRef.current = null;
         needsRejoinRef.current = false;
-        clearReconnectStorage();
+        if (preserveReconnectState) {
+            lastClientIdRef.current = clientIdRef.current;
+        } else {
+            lastClientIdRef.current = null;
+            clearReconnectStorage();
+        }
+        clientIdRef.current = null;
+        setClientId(null);
         setRoomState(null);
         setTurnToken(null);
         setTurnTokenTTLMs(null);

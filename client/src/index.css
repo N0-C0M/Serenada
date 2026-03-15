@@ -265,6 +265,106 @@ body {
   transform: scaleX(-1);
 }
 
+/* Multi-party stage layout */
+.multi-party-call .video-stage {
+  position: absolute;
+  inset: 0;
+  padding: 16px 16px 184px;
+  background:
+    radial-gradient(circle at top, rgba(47, 129, 247, 0.14), transparent 32%),
+    radial-gradient(circle at bottom, rgba(255, 255, 255, 0.05), transparent 30%),
+    #050608;
+  z-index: 1;
+}
+
+.multi-party-call .video-stage-viewport {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.multi-party-call .video-stage-rows {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.multi-party-call .video-stage-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  max-width: 100%;
+}
+
+.multi-party-call .video-stage-tile {
+  position: relative;
+  overflow: hidden;
+  flex: 0 0 auto;
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 30%),
+    #111;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.35);
+}
+
+.multi-party-call .video-stage-remote {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #060708;
+}
+
+.video-grid-label {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  font-size: 12px;
+  color: white;
+  background: rgba(0, 0, 0, 0.56);
+  padding: 4px 10px;
+  border-radius: 999px;
+  backdrop-filter: blur(6px);
+}
+
+.multi-party-call .video-local-container-stage {
+  bottom: 108px;
+  right: 16px;
+  width: min(132px, 26vw);
+  max-width: 26vw;
+  max-height: 24vh;
+  border-radius: 8px;
+  border-width: 1px;
+  background: rgba(17, 17, 17, 0.95);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.42);
+}
+
+@media (min-width: 768px) {
+  .multi-party-call .video-stage {
+    padding: 24px 28px 136px;
+  }
+
+  .multi-party-call .video-stage-tile {
+    border-radius: 12px;
+  }
+
+  .multi-party-call .video-local-container-stage {
+    bottom: 112px;
+    right: 32px;
+    width: min(220px, 22vw);
+    max-width: 22vw;
+    max-height: 22vh;
+    border-radius: 10px;
+  }
+}
+
 .controls-bar {
   position: absolute;
   bottom: 20px;

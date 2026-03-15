@@ -22,7 +22,7 @@
 
 "join_enter_code_or_link" = "Entrer un code ou un lien";
 "join_settings" = "Paramètres";
-"join_subtitle" = "Appels vidéo privés 1:1, sans compte.";
+"join_subtitle" = "Appels vidéo privés, sans compte.";
 "join_start_call" = "Démarrer l’appel";
 "recent_calls_title" = "Vos appels récents";
 "recent_calls_at" = "à";
@@ -37,6 +37,7 @@
 "error_enter_room_or_id" = "Entrez un lien ou un ID de salle";
 "error_failed_create_room" = "Échec de création de la salle";
 "error_invalid_room_id" = "ID de salle invalide";
+"error_room_capacity_unsupported" = "Cette salle nécessite une version plus récente de l’application.";
 "error_unknown" = "Erreur inconnue";
 
 "call_status_connected" = "Connecté";

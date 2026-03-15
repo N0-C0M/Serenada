@@ -178,17 +178,25 @@ const ratioPercent = (numerator: number, denominator: number): number | null => 
 };
 
 export const useRealtimeCallStats = (
-    peerConnection: RTCPeerConnection | null,
+    peerConnections: RTCPeerConnection[],
     enabled: boolean
 ): RealtimeCallStats | null => {
     const [realtimeStats, setRealtimeStats] = useState<RealtimeCallStats | null>(null);
     const statsSampleRef = useRef<StatsSample | null>(null);
     const freezeSamplesRef = useRef<FreezeSample[]>([]);
 
+    // Reset samples when the set of PCs changes (identity, not just count)
+    const prevPcsRef = useRef<RTCPeerConnection[]>([]);
     useEffect(() => {
-        statsSampleRef.current = null;
-        freezeSamplesRef.current = [];
-    }, [peerConnection]);
+        const prev = prevPcsRef.current;
+        const changed = prev.length !== peerConnections.length ||
+            peerConnections.some((pc, i) => pc !== prev[i]);
+        if (changed) {
+            prevPcsRef.current = peerConnections;
+            statsSampleRef.current = null;
+            freezeSamplesRef.current = [];
+        }
+    }, [peerConnections]);
 
     useEffect(() => {
         if (!enabled) {
@@ -201,19 +209,21 @@ export const useRealtimeCallStats = (
         let cancelled = false;
 
         const pollRealtimeStats = async () => {
-            const pc = peerConnection;
-            if (!pc) {
-                if (!cancelled) {
-                    setRealtimeStats(null);
-                }
+            if (peerConnections.length === 0) {
+                if (!cancelled) setRealtimeStats(null);
                 return;
             }
 
             try {
-                const report = await pc.getStats();
+                // Merge stats from all peer connections (namespace IDs by peer index)
+                const reports = await Promise.all(peerConnections.map(pc => pc.getStats()));
                 const statsById = new Map<string, RTCStats>();
-                report.forEach(stat => {
-                    statsById.set(stat.id, stat);
+                reports.forEach((r, i) => {
+                    const prefix = `p${i}:`;
+                    r.forEach(stat => {
+                        const namespacedId = prefix + stat.id;
+                        statsById.set(namespacedId, { ...stat, id: namespacedId } as RTCStats);
+                    });
                 });
 
                 const media = {
@@ -226,7 +236,7 @@ export const useRealtimeCallStats = (
                 let remoteInboundRttSumSeconds = 0;
                 let remoteInboundRttCount = 0;
 
-                report.forEach(stat => {
+                statsById.forEach(stat => {
                     if (stat.type === 'candidate-pair') {
                         const isSelected = getStatBoolean(stat, 'selected') === true;
                         const isNominated = getStatBoolean(stat, 'nominated') === true;
@@ -293,11 +303,13 @@ export const useRealtimeCallStats = (
                 }
 
                 const selectedPair = selectedCandidatePair;
+                // Extract the namespace prefix (e.g. "p0:") from the selected pair's ID
+                const pairPrefix = selectedPair ? selectedPair.id.substring(0, selectedPair.id.indexOf(':') + 1) : '';
                 const localCandidate = selectedPair
-                    ? statsById.get(getStatString(selectedPair, 'localCandidateId') ?? '')
+                    ? statsById.get(pairPrefix + (getStatString(selectedPair, 'localCandidateId') ?? ''))
                     : null;
                 const remoteCandidate = selectedPair
-                    ? statsById.get(getStatString(selectedPair, 'remoteCandidateId') ?? '')
+                    ? statsById.get(pairPrefix + (getStatString(selectedPair, 'remoteCandidateId') ?? ''))
                     : null;
 
                 const localCandidateType = localCandidate ? getStatString(localCandidate, 'candidateType') : null;
@@ -440,7 +452,7 @@ export const useRealtimeCallStats = (
             cancelled = true;
             window.clearInterval(timer);
         };
-    }, [enabled, peerConnection]);
+    }, [enabled, peerConnections]);
 
     return realtimeStats;
 };
