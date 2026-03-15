@@ -552,7 +552,22 @@ final class WebRtcEngine {
 
         notifyCameraModeAndFlash()
         _ = applyTorchForCurrentMode()
+        
+        enableContinuousAutoFocus(for: camera)
+        
         return true
+    }
+
+    private func enableContinuousAutoFocus(for device: AVCaptureDevice) {
+        do {
+            try device.lockForConfiguration()
+            if device.isFocusModeSupported(.continuousAutoFocus) {
+                device.focusMode = .continuousAutoFocus
+            }
+            device.unlockForConfiguration()
+        } catch {
+            debugTrace("webrtc enableContinuousAutoFocus lock failed error=\(error.localizedDescription)")
+        }
     }
 
     private func switchVideoCapturer(source: LocalCameraSource, fallbackSource: LocalCameraSource? = nil) {
@@ -1043,6 +1058,10 @@ private final class CompositeCameraVideoCapturer: RTCVideoCapturer, AVCaptureVid
             try device.lockForConfiguration()
             defer { device.unlockForConfiguration() }
             device.activeFormat = format
+            
+            if device.isFocusModeSupported(.continuousAutoFocus) {
+                device.focusMode = .continuousAutoFocus
+            }
 
             let supportedFrameRates = format.videoSupportedFrameRateRanges
             let canTargetFps = supportedFrameRates.contains { range in
