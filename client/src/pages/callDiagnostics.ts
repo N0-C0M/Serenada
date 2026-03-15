@@ -302,7 +302,7 @@ export const useRealtimeCallStats = (
                     selectedCandidatePair = fallbackCandidatePair;
                 }
 
-                const selectedPair = selectedCandidatePair;
+                const selectedPair = (selectedCandidatePair as RTCStats | null);
                 // Extract the namespace prefix (e.g. "p0:") from the selected pair's ID
                 const pairPrefix = selectedPair ? selectedPair.id.substring(0, selectedPair.id.indexOf(':') + 1) : '';
                 const localCandidate = selectedPair
