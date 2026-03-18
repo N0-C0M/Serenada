@@ -556,6 +556,12 @@ final class CallManager: ObservableObject {
     func flipCamera() {
         if !uiState.isScreenSharing {
             debugTrace("ui flipCamera mode=\(uiState.localCameraMode.rawValue)")
+            // If currently in content mode (world/composite), broadcast deactivation
+            // before the flip. The onCameraModeChanged callback will broadcast
+            // activation if the new mode is also a content mode.
+            if uiState.localCameraMode.isContentMode {
+                broadcastContentState(active: false)
+            }
             webRtcEngine.flipCamera()
         }
     }
@@ -577,6 +583,7 @@ final class CallManager: ObservableObject {
                     $0.localCameraMode = .screenShare
                     $0.cameraZoomFactor = 1
                 }
+                self.broadcastContentState(active: true, contentType: ContentTypeWire.screenShare)
                 self.applyLocalVideoPreference()
             }
         }
@@ -584,7 +591,7 @@ final class CallManager: ObservableObject {
 
     func adjustCameraZoom(scaleDelta: CGFloat) {
         guard uiState.phase == .inCall else { return }
-        guard uiState.localCameraMode == .world || uiState.localCameraMode == .composite else { return }
+        guard uiState.localCameraMode.isContentMode else { return }
         if let zoom = webRtcEngine.adjustCaptureZoom(by: scaleDelta) {
             updateState { $0.cameraZoomFactor = zoom }
         }
@@ -722,6 +729,8 @@ final class CallManager: ObservableObject {
             handleTurnRefreshed(message)
         case "offer", "answer", "ice":
             handleSignalingPayload(message)
+        case "content_state":
+            handleContentState(message)
         case "error":
             handleError(message)
         default:
@@ -742,6 +751,7 @@ final class CallManager: ObservableObject {
         hasJoinAcknowledgedCurrentAttempt = true
         clientId = message.cid
         settingsStore.reconnectCid = message.cid
+        uiState.localCid = clientId
 
         if let token = message.payload?.objectValue?["reconnectToken"]?.stringValue {
             reconnectToken = token
@@ -886,6 +896,23 @@ final class CallManager: ObservableObject {
             phase: .error,
             errorMessage: resolvedMessage?.isEmpty == false ? resolvedMessage : L10n.errorUnknown
         ))
+    }
+
+    private func handleContentState(_ message: SignalingMessage) {
+        guard let fromCid = message.payload?.objectValue?["from"]?.stringValue,
+              !fromCid.isEmpty else { return }
+        let active = message.payload?.objectValue?["active"]?.boolValue == true
+        let contentType = active ? message.payload?.objectValue?["contentType"]?.stringValue : nil
+        updateState {
+            $0.remoteContentCid = active ? fromCid : nil
+            $0.remoteContentType = contentType
+        }
+    }
+
+    private func broadcastContentState(active: Bool, contentType: String? = nil) {
+        var payload: [String: JSONValue] = ["active": .bool(active)]
+        if active, let contentType { payload["contentType"] = .string(contentType) }
+        sendMessage(type: "content_state", payload: .object(payload))
     }
 
     private func handleSignalingPayload(_ message: SignalingMessage) {
@@ -1684,12 +1711,25 @@ final class CallManager: ObservableObject {
                 )
             }
 
+        let activeCids = Set(participants.map(\.cid))
+        let clearContent = uiState.remoteContentCid != nil && !activeCids.contains(uiState.remoteContentCid!)
+
         if uiState.remoteParticipants == participants {
+            if clearContent {
+                updateState {
+                    $0.remoteContentCid = nil
+                    $0.remoteContentType = nil
+                }
+            }
             return
         }
 
         updateState {
             $0.remoteParticipants = participants
+            if clearContent {
+                $0.remoteContentCid = nil
+                $0.remoteContentType = nil
+            }
         }
     }
 
@@ -2360,7 +2400,17 @@ final class CallManager: ObservableObject {
             },
             onCameraModeChanged: { [weak eventSink] mode in
                 Task { @MainActor in
+                    let previousMode = eventSink?.uiState.localCameraMode
                     eventSink?.updateState { $0.localCameraMode = mode }
+                    // Broadcast content state for world/composite camera
+                    let isContent = mode.isContentMode
+                    let wasContent = previousMode?.isContentMode ?? false
+                    if isContent {
+                        let type = mode == .world ? ContentTypeWire.worldCamera : ContentTypeWire.compositeCamera
+                        eventSink?.broadcastContentState(active: true, contentType: type)
+                    } else if wasContent {
+                        eventSink?.broadcastContentState(active: false)
+                    }
                 }
             },
             onFlashlightStateChanged: { [weak eventSink] available, enabled in
@@ -2377,6 +2427,7 @@ final class CallManager: ObservableObject {
                         $0.isScreenSharing = false
                         $0.cameraZoomFactor = 1
                     }
+                    eventSink?.broadcastContentState(active: false)
                     eventSink?.applyLocalVideoPreference()
                 }
             },

@@ -3,6 +3,7 @@ package app.serenada.android.call
 data class CallUiState(
     val phase: CallPhase = CallPhase.Idle,
     val roomId: String? = null,
+    val localCid: String? = null,
     val statusMessageResId: Int? = null,
     val errorMessageResId: Int? = null,
     val errorMessageText: String? = null,
@@ -23,7 +24,9 @@ data class CallUiState(
     val isScreenSharing: Boolean = false,
     val localCameraMode: LocalCameraMode = LocalCameraMode.SELFIE,
     val isFlashAvailable: Boolean = false,
-    val isFlashEnabled: Boolean = false
+    val isFlashEnabled: Boolean = false,
+    val remoteContentCid: String? = null,
+    val remoteContentType: String? = null,
 ) {
     val remoteVideoEnabled: Boolean
         get() = remoteParticipants.firstOrNull()?.videoEnabled ?: false

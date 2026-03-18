@@ -3,11 +3,20 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useSignaling } from '../contexts/SignalingContext';
 import { useWebRTC } from '../contexts/WebRTCContext';
 import { useToast } from '../contexts/ToastContext';
-import { Mic, MicOff, Video, VideoOff, PhoneOff, Copy, AlertCircle, RotateCcw, Maximize2, Minimize2, CheckSquare, Square, ScreenShare, ScreenShareOff, BellRing } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, PhoneOff, Copy, AlertCircle, RotateCcw, Maximize2, Minimize2, CheckSquare, Square, ScreenShare, ScreenShareOff, BellRing, Pin } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import { saveCall } from '../utils/callHistory';
 import { useTranslation } from 'react-i18next';
 import { playJoinChime } from '../utils/audio';
+import {
+    computeStageLayout,
+    computeLayout,
+    clampStageTileAspectRatio,
+    STAGE_TILE_GAP_PX,
+    type CallScene,
+    type ContentSource,
+    type LayoutResult,
+} from '../layout/computeLayout';
 import { getOrCreatePushKeyPair } from '../utils/pushCrypto';
 import { getPersistedRemoteVideoFit, persistRemoteVideoFit, type RemoteVideoFit } from '../utils/remoteVideoFit';
 import { saveRoom, markRoomJoined, type SaveRoomResult } from '../utils/savedRooms';
@@ -191,34 +200,6 @@ async function captureSnapshotBytes(stream: MediaStream): Promise<{ bytes: Uint8
     return { bytes: new Uint8Array(buffer), mime: 'image/jpeg' };
 }
 
-const MIN_STAGE_TILE_ASPECT = 9 / 16;
-const MAX_STAGE_TILE_ASPECT = 16 / 9;
-const DEFAULT_STAGE_TILE_ASPECT = 16 / 9;
-const STAGE_TILE_GAP_PX = 12;
-
-type StageTileSpec = {
-    cid: string;
-    stream: MediaStream;
-    aspectRatio: number;
-};
-
-type StageTileLayout = {
-    cid: string;
-    width: number;
-    height: number;
-};
-
-type StageRowLayout = {
-    items: StageTileLayout[];
-};
-
-function clampStageTileAspectRatio(ratio?: number | null): number {
-    if (!ratio || !Number.isFinite(ratio) || ratio <= 0) {
-        return DEFAULT_STAGE_TILE_ASPECT;
-    }
-    return Math.min(MAX_STAGE_TILE_ASPECT, Math.max(MIN_STAGE_TILE_ASPECT, ratio));
-}
-
 function getStreamAspectRatio(stream: MediaStream): number | null {
     const track = stream.getVideoTracks()[0];
     if (!track) return null;
@@ -233,102 +214,16 @@ function getStreamAspectRatio(stream: MediaStream): number | null {
     return null;
 }
 
-function computeStageLayout(tiles: StageTileSpec[], availableWidth: number, availableHeight: number, gap: number): StageRowLayout[] {
-    if (tiles.length === 0 || availableWidth <= 0 || availableHeight <= 0) {
-        return [];
-    }
-
-    const candidateRows: number[][][] = tiles.length === 1
-        ? [[[0]]]
-        : tiles.length === 2
-            ? [[[0, 1]], [[0], [1]]]
-            : [[[0, 1, 2]], [[0, 1], [2]], [[0], [1, 2]], [[0], [1], [2]]];
-
-    let bestLayout: StageRowLayout[] = [];
-    let bestHarmonicShortEdge = -1;
-    let bestMinShortEdge = -1;
-    let bestArea = -1;
-    let bestRowCount = Number.POSITIVE_INFINITY;
-
-    for (const rows of candidateRows) {
-        const baseHeights = rows.map((row) => {
-            const totalAspect = row.reduce((sum, index) => sum + tiles[index].aspectRatio, 0);
-            const rowWidth = availableWidth - gap * Math.max(0, row.length - 1);
-            return rowWidth > 0 && totalAspect > 0 ? rowWidth / totalAspect : 0;
-        });
-
-        const verticalGap = gap * Math.max(0, rows.length - 1);
-        const totalBaseHeight = baseHeights.reduce((sum, value) => sum + value, 0);
-        if (totalBaseHeight <= 0 || availableHeight <= verticalGap) {
-            continue;
-        }
-
-        const scale = Math.min(1, (availableHeight - verticalGap) / totalBaseHeight);
-        if (scale <= 0) {
-            continue;
-        }
-
-        const layout = rows.map((row, rowIndex) => {
-            const rowHeight = Math.max(1, Math.floor(baseHeights[rowIndex] * scale));
-            const items = row.map((index) => {
-                const tile = tiles[index];
-                return {
-                    cid: tile.cid,
-                    width: Math.max(1, Math.floor(tile.aspectRatio * rowHeight)),
-                    height: rowHeight
-                };
-            });
-            return { items };
-        });
-
-        const area = layout.reduce((sum, row) => (
-            sum + row.items.reduce((rowArea, tile) => rowArea + tile.width * tile.height, 0)
-        ), 0);
-        const shortEdges = layout.flatMap((row) => row.items.map((tile) => Math.min(tile.width, tile.height)));
-        const minShortEdge = shortEdges.reduce((currentMin, shortEdge) => Math.min(currentMin, shortEdge), Number.POSITIVE_INFINITY);
-        const harmonicShortEdge = shortEdges.length / shortEdges.reduce((sum, shortEdge) => sum + (1 / shortEdge), 0);
-        const rowCount = layout.length;
-
-        const shortEdgeGainIsMeaningful = harmonicShortEdge > bestHarmonicShortEdge + 6;
-        const shortEdgeIsComparable = Math.abs(harmonicShortEdge - bestHarmonicShortEdge) <= 6;
-        const minShortEdgeImproved = minShortEdge > bestMinShortEdge + 1;
-        const minShortEdgeComparable = Math.abs(minShortEdge - bestMinShortEdge) <= 1;
-
-        if (
-            shortEdgeGainIsMeaningful ||
-            (
-                shortEdgeIsComparable && (
-                    rowCount < bestRowCount ||
-                    (rowCount === bestRowCount && (
-                        minShortEdgeImproved ||
-                        (minShortEdgeComparable && area > bestArea)
-                    ))
-                )
-            ) ||
-            (
-                !shortEdgeIsComparable &&
-                harmonicShortEdge > bestHarmonicShortEdge &&
-                minShortEdgeImproved
-            )
-        ) {
-            bestHarmonicShortEdge = harmonicShortEdge;
-            bestMinShortEdge = minShortEdge;
-            bestArea = area;
-            bestRowCount = rowCount;
-            bestLayout = layout;
-        }
-    }
-
-    return bestLayout;
-}
-
 // Multi-party remote tile (defined outside component to avoid remounts)
 const VideoTile: React.FC<{
     stream: MediaStream;
     tileStyle?: React.CSSProperties;
     label?: string;
     onAspectRatioChange?: (ratio: number) => void;
-}> = ({ stream, tileStyle, label, onAspectRatioChange }) => {
+    onClick?: () => void;
+    pinned?: boolean;
+    videoFit?: 'cover' | 'contain';
+}> = ({ stream, tileStyle, label, onAspectRatioChange, onClick, pinned, videoFit }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
 
     useEffect(() => {
@@ -358,9 +253,17 @@ const VideoTile: React.FC<{
     }, [onAspectRatioChange, stream]);
 
     return (
-        <div className="video-stage-tile" style={tileStyle}>
-            <video ref={videoRef} autoPlay playsInline className="video-stage-remote" />
+        <div
+            className="video-stage-tile"
+            style={tileStyle}
+            onPointerUp={onClick ? (e) => { e.stopPropagation(); onClick(); } : undefined}
+            onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
+            role={onClick ? 'button' : undefined}
+            tabIndex={onClick ? 0 : undefined}
+        >
+            <video ref={videoRef} autoPlay playsInline className="video-stage-remote" style={videoFit ? { objectFit: videoFit } : undefined} />
             {label && <div className="video-grid-label">{label}</div>}
+            {pinned && <div className="video-stage-pin-indicator" aria-hidden="true"><Pin size={16} /></div>}
         </div>
     );
 };
@@ -385,6 +288,7 @@ const CallRoom: React.FC = () => {
         clientId,
         isConnected,
         activeTransport,
+        subscribeToMessages,
         error: signalingError,
         clearError
     } = useSignaling();
@@ -423,6 +327,8 @@ const CallRoom: React.FC = () => {
     const [remoteVideoFit, setRemoteVideoFit] = useState<RemoteVideoFit>(() => getPersistedRemoteVideoFit());
     const [showRecoveringBadge, setShowRecoveringBadge] = useState(false);
     const [showWaiting, setShowWaiting] = useState(true);
+    const [pinnedParticipantId, setPinnedParticipantId] = useState<string | null>(null);
+    const [remoteContentState, setRemoteContentState] = useState<{ cid: string; contentType: ContentSource['type'] } | null>(null);
 
     const lastFacingModeRef = useRef(facingMode);
 
@@ -673,6 +579,52 @@ const CallRoom: React.FC = () => {
         computeStageLayout(remoteStageTiles, stageViewportSize.width, stageViewportSize.height, STAGE_TILE_GAP_PX)
     ), [remoteStageTiles, stageViewportSize.height, stageViewportSize.width]);
 
+    // Content source: local screen share or remote content in multi-party triggers content layout
+    const contentSource = useMemo((): ContentSource | null => {
+        if (!isMultiParty) return null;
+        if (isScreenSharing && clientId) {
+            return { type: 'screenShare', ownerParticipantId: clientId, aspectRatio: null };
+        }
+        if (remoteContentState) {
+            return { type: remoteContentState.contentType, ownerParticipantId: remoteContentState.cid, aspectRatio: null };
+        }
+        return null;
+    }, [isScreenSharing, isMultiParty, clientId, remoteContentState]);
+
+    // Compute focus/content layout when pinned or content source active
+    const computedLayout = useMemo((): LayoutResult | null => {
+        if ((!pinnedParticipantId && !contentSource) || !isMultiParty || !clientId) return null;
+
+        const participants = [
+            ...remoteStreamEntries.map(([cid]) => ({
+                id: cid,
+                role: 'remote' as const,
+                videoEnabled: true,
+                videoAspectRatio: remoteStageAspectRatios[cid] ?? null,
+            })),
+            {
+                id: clientId,
+                role: 'local' as const,
+                videoEnabled: !isCameraOff,
+                videoAspectRatio: null as number | null,
+            },
+        ];
+
+        const scene: CallScene = {
+            viewportWidth: stageViewportSize.width,
+            viewportHeight: stageViewportSize.height,
+            safeAreaInsets: { top: 0, bottom: 0, left: 0, right: 0 },
+            participants,
+            localParticipantId: clientId,
+            activeSpeakerId: null,
+            pinnedParticipantId: contentSource ? null : pinnedParticipantId,
+            contentSource,
+            userPrefs: { swappedLocalAndRemote: false, dominantFit: remoteVideoFit },
+        };
+
+        return computeLayout(scene);
+    }, [pinnedParticipantId, contentSource, isMultiParty, clientId, remoteStreamEntries, remoteStageAspectRatios, isCameraOff, stageViewportSize, remoteVideoFit]);
+
     // Handle stream attachment
     useEffect(() => {
         attachVideoStream(localVideoRef.current, localStream);
@@ -691,7 +643,31 @@ const CallRoom: React.FC = () => {
             }
             return Object.fromEntries(nextEntries);
         });
-    }, [remoteStreamEntries]);
+        // Auto-unpin if pinned participant left (but not if local is pinned)
+        if (pinnedParticipantId && pinnedParticipantId !== clientId && !activeRemoteCids.has(pinnedParticipantId)) {
+            setPinnedParticipantId(null);
+        }
+        // Clear remote content state if sharing participant left
+        if (remoteContentState && !activeRemoteCids.has(remoteContentState.cid)) {
+            setRemoteContentState(null);
+        }
+    }, [remoteStreamEntries, pinnedParticipantId, remoteContentState]);
+
+    // Listen for content_state messages from remote participants
+    useEffect(() => {
+        return subscribeToMessages((msg: any) => {
+            if (msg.type === 'content_state' && msg.payload?.from) {
+                if (msg.payload.active && msg.payload.contentType) {
+                    setRemoteContentState({ cid: msg.payload.from, contentType: msg.payload.contentType });
+                } else {
+                    // Only clear if the inactive message is from the current content owner
+                    setRemoteContentState((prev) =>
+                        prev && prev.cid === msg.payload.from ? null : prev
+                    );
+                }
+            }
+        });
+    }, [subscribeToMessages]);
 
     useEffect(() => {
         if (!isMultiParty || !stageViewportRef.current) {
@@ -1269,47 +1245,125 @@ const CallRoom: React.FC = () => {
                 {overlayContent}
                 <div className="video-stage">
                     <div className="video-stage-viewport" ref={setStageViewportNode}>
-                        <div className="video-stage-rows">
-                            {remoteStageLayout.map((row, rowIndex) => (
-                                <div className="video-stage-row" key={`row-${rowIndex}`}>
-                                    {row.items.map((tile) => {
-                                        const stageTile = remoteStageTileMap.get(tile.cid);
-                                        if (!stageTile) {
-                                            return null;
-                                        }
+                        {computedLayout ? (
+                            // Focus/content mode: absolute positioning from computeLayout
+                            <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+                                {computedLayout.tiles.map((tile) => {
+                                    const isContentTile = tile.type === 'contentSource';
+                                    const isLocal = tile.id === clientId;
+                                    const contentOwnerCid = contentSource?.ownerParticipantId;
+                                    const isLocalContent = isContentTile && contentOwnerCid === clientId;
+                                    const isRemoteContent = isContentTile && contentOwnerCid !== clientId;
+                                    // Local participant tile when LOCAL user owns content: camera replaced, show placeholder
+                                    const isLocalPlaceholder = isLocal && contentOwnerCid === clientId && !isContentTile;
+                                    // Resolve the stream for this tile
+                                    const stream = isLocalContent || isLocal
+                                        ? localStream
+                                        : isRemoteContent
+                                            ? remoteStageTileMap.get(contentOwnerCid!)?.stream
+                                            : remoteStageTileMap.get(tile.id)?.stream;
+                                    if (!stream && !isLocalPlaceholder) return null;
+
+                                    const tileStyle: React.CSSProperties = {
+                                        position: 'absolute',
+                                        left: `${tile.frame.x}px`,
+                                        top: `${tile.frame.y}px`,
+                                        width: `${tile.frame.width}px`,
+                                        height: `${tile.frame.height}px`,
+                                        borderRadius: `${tile.cornerRadius}px`,
+                                        zIndex: tile.zOrder,
+                                    };
+
+                                    if (isLocalPlaceholder) {
                                         return (
-                                            <VideoTile
-                                                key={tile.cid}
-                                                stream={stageTile.stream}
-                                                tileStyle={{
-                                                    width: `${tile.width}px`,
-                                                    height: `${tile.height}px`
-                                                }}
-                                                onAspectRatioChange={(ratio) => updateRemoteStageAspectRatio(tile.cid, ratio)}
-                                            />
+                                            <div key={tile.id} className="video-stage-tile" style={tileStyle}>
+                                                <div className="video-stage-placeholder">
+                                                    <VideoOff size={24} />
+                                                </div>
+                                            </div>
                                         );
-                                    })}
-                                </div>
-                            ))}
-                        </div>
+                                    }
+
+                                    const isPrimaryTile = tile.zOrder === 0;
+                                    return (
+                                        <div key={tile.id} className="video-stage-tile" style={tileStyle}>
+                                            <VideoTile
+                                                stream={stream!}
+                                                tileStyle={{ width: '100%', height: '100%', borderRadius: 'inherit' }}
+                                                videoFit={tile.fit}
+                                                onAspectRatioChange={
+                                                    isLocal || isContentTile ? undefined : (ratio) => updateRemoteStageAspectRatio(tile.id, ratio)
+                                                }
+                                                onClick={() => {
+                                                    if (!isContentTile) {
+                                                        setPinnedParticipantId(
+                                                            tile.id === pinnedParticipantId ? null : tile.id
+                                                        );
+                                                    }
+                                                }}
+                                                pinned={tile.id === pinnedParticipantId}
+                                            />
+                                            {isPrimaryTile && (
+                                                <button
+                                                    className="btn-zoom"
+                                                    onPointerUp={toggleRemoteVideoFit}
+                                                    title={remoteVideoFit === 'cover' ? t('zoom_fit') : t('zoom_fill')}
+                                                >
+                                                    {remoteVideoFit === 'cover' ? <Minimize2 /> : <Maximize2 />}
+                                                </button>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        ) : (
+                            // Grid mode: existing row-based rendering
+                            <div className="video-stage-rows">
+                                {remoteStageLayout.map((row, rowIndex) => (
+                                    <div className="video-stage-row" key={`row-${rowIndex}`}>
+                                        {row.items.map((tile) => {
+                                            const stageTile = remoteStageTileMap.get(tile.cid);
+                                            if (!stageTile) {
+                                                return null;
+                                            }
+                                            return (
+                                                <VideoTile
+                                                    key={tile.cid}
+                                                    stream={stageTile.stream}
+                                                    tileStyle={{
+                                                        width: `${tile.width}px`,
+                                                        height: `${tile.height}px`
+                                                    }}
+                                                    onAspectRatioChange={(ratio) => updateRemoteStageAspectRatio(tile.cid, ratio)}
+                                                    onClick={() => setPinnedParticipantId(tile.cid)}
+                                                />
+                                            );
+                                        })}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
-                <div
-                    className="video-local-container pip video-local-container-stage"
-                    onPointerUp={(event) => {
-                        event.stopPropagation();
-                        handleControlsInteraction();
-                    }}
-                >
-                    <video
-                        ref={setLocalVideoRef}
-                        autoPlay
-                        playsInline
-                        muted
-                        className={`video-local ${shouldMirrorLocalVideo ? 'mirrored' : ''}`}
-                        style={{ objectFit: isScreenSharing ? 'contain' : 'cover' }}
-                    />
-                </div>
+                {/* Hide local PIP when in focus mode (local is in the filmstrip) */}
+                {!computedLayout && (
+                    <div
+                        className="video-local-container pip video-local-container-stage"
+                        onPointerUp={(event) => {
+                            event.stopPropagation();
+                            handleControlsInteraction();
+                        }}
+                    >
+                        <video
+                            ref={setLocalVideoRef}
+                            autoPlay
+                            playsInline
+                            muted
+                            className={`video-local ${shouldMirrorLocalVideo ? 'mirrored' : ''}`}
+                            style={{ objectFit: isScreenSharing ? 'contain' : 'cover' }}
+                        />
+                    </div>
+                )}
                 {controlsBar}
             </div>
         );

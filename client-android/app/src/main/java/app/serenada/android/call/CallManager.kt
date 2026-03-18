@@ -229,7 +229,17 @@ class CallManager(context: Context) {
             },
             onCameraModeChanged = { mode ->
                 handler.post {
+                    val previousMode = _uiState.value.localCameraMode
                     updateState(_uiState.value.copy(localCameraMode = mode))
+                    // Broadcast content state when entering/leaving world/composite mode
+                    val isContent = mode.isContentMode
+                    val wasContent = previousMode.isContentMode
+                    if (isContent) {
+                        val type = if (mode == LocalCameraMode.WORLD) ContentTypeWire.WORLD_CAMERA else ContentTypeWire.COMPOSITE_CAMERA
+                        broadcastContentState(true, type)
+                    } else if (wasContent) {
+                        broadcastContentState(false)
+                    }
                 }
             },
             onFlashlightStateChanged = { available, enabled ->
@@ -246,6 +256,7 @@ class CallManager(context: Context) {
                 handler.post {
                     if (_uiState.value.isScreenSharing) {
                         updateState(_uiState.value.copy(isScreenSharing = false))
+                        broadcastContentState(false)
                     }
                     applyLocalVideoPreference()
                 }
@@ -804,6 +815,13 @@ class CallManager(context: Context) {
     fun flipCamera() {
         // Can only flip if not screen sharing
         if (!_uiState.value.isScreenSharing) {
+            // If currently in content mode (world/composite), broadcast deactivation
+            // before the flip. The onCameraModeChanged callback will broadcast
+            // activation if the new mode is also a content mode.
+            val currentMode = _uiState.value.localCameraMode
+            if (currentMode.isContentMode) {
+                broadcastContentState(false)
+            }
             webRtcEngine.flipCamera()
         }
     }
@@ -838,6 +856,7 @@ class CallManager(context: Context) {
             CallService.start(appContext, roomId, roomName = savedRoomNameForNotification(roomId))
         }
         updateState(_uiState.value.copy(isScreenSharing = false))
+        broadcastContentState(false)
         applyLocalVideoPreference()
     }
 
@@ -853,6 +872,7 @@ class CallManager(context: Context) {
                 return
             }
             updateState(_uiState.value.copy(isScreenSharing = true))
+            broadcastContentState(true, ContentTypeWire.SCREEN_SHARE)
             applyLocalVideoPreference()
             return
         }
@@ -935,6 +955,14 @@ class CallManager(context: Context) {
         renderer: org.webrtc.SurfaceViewRenderer,
     ) {
         peerSlots[cid]?.detachRemoteRenderer(renderer)
+    }
+
+    fun attachRemoteSinkForCid(cid: String, sink: org.webrtc.VideoSink) {
+        peerSlots[cid]?.attachRemoteSink(sink)
+    }
+
+    fun detachRemoteSinkForCid(cid: String, sink: org.webrtc.VideoSink) {
+        peerSlots[cid]?.detachRemoteSink(sink)
     }
 
     fun eglContext(): org.webrtc.EglBase.Context = webRtcEngine.getEglContext()
@@ -1032,6 +1060,7 @@ class CallManager(context: Context) {
             "pong" -> signalingClient.recordPong()
             "turn-refreshed" -> handleTurnRefreshed(msg)
             "offer", "answer", "ice" -> handleSignalingPayload(msg)
+            "content_state" -> handleContentState(msg)
             "error" -> handleError(msg)
         }
     }
@@ -1044,6 +1073,7 @@ class CallManager(context: Context) {
 
         clientId = msg.cid
         clientId?.let { settingsStore.reconnectCid = it }
+        updateState(_uiState.value.copy(localCid = clientId))
 
         msg.payload?.optString("reconnectToken").orEmpty().ifBlank { null }?.let {
             reconnectToken = it
@@ -1126,6 +1156,26 @@ class CallManager(context: Context) {
         val rid = payload.optString("rid").orEmpty()
         if (!watchedRoomIds.contains(rid)) return
         _roomStatuses.value = RoomStatuses.mergeStatusUpdatePayload(previous = _roomStatuses.value, payload = payload)
+    }
+
+    private fun handleContentState(msg: SignalingMessage) {
+        val fromCid = msg.payload?.optString("from") ?: return
+        val active = msg.payload?.optBoolean("active") == true
+        val contentType = if (active) msg.payload?.optString("contentType") else null
+        updateState(
+            _uiState.value.copy(
+                remoteContentCid = if (active) fromCid else null,
+                remoteContentType = contentType,
+            )
+        )
+    }
+
+    private fun broadcastContentState(active: Boolean, contentType: String? = null) {
+        val payload = JSONObject().apply {
+            put("active", active)
+            if (active && contentType != null) put("contentType", contentType)
+        }
+        sendMessage("content_state", payload)
     }
 
     private fun handleError(msg: SignalingMessage) {
@@ -1699,12 +1749,20 @@ class CallManager(context: Context) {
                 )
             }
         val state = _uiState.value
+        val activeCids = remoteParticipants.map { it.cid }.toSet()
+        val clearContent = state.remoteContentCid != null && state.remoteContentCid !in activeCids
         if (state.remoteParticipants == remoteParticipants) {
+            // Still check if remote content CID left
+            if (clearContent) {
+                updateState(state.copy(remoteContentCid = null, remoteContentType = null))
+            }
             return
         }
         updateState(
             state.copy(
-                remoteParticipants = remoteParticipants
+                remoteParticipants = remoteParticipants,
+                remoteContentCid = if (clearContent) null else state.remoteContentCid,
+                remoteContentType = if (clearContent) null else state.remoteContentType,
             )
         )
     }

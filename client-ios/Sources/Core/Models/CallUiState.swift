@@ -9,6 +9,7 @@ enum ConnectionStatus: String, Equatable {
 struct CallUiState: Equatable {
     var phase: CallPhase = .idle
     var roomId: String?
+    var localCid: String?
     var statusMessage: String?
     var errorMessage: String?
     var isHost: Bool = false
@@ -30,6 +31,8 @@ struct CallUiState: Equatable {
     var cameraZoomFactor: Double = 1
     var isFlashAvailable: Bool = false
     var isFlashEnabled: Bool = false
+    var remoteContentCid: String?
+    var remoteContentType: String?
 
     var remoteVideoEnabled: Bool {
         remoteParticipants.first?.videoEnabled ?? false
