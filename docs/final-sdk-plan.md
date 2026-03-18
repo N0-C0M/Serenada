@@ -24,8 +24,8 @@ Synthesized from six independent and cross-pollinated analyses (Claude v1/v2, Co
 │  ┌──────────────────────────────────────────────────────────┐ │
 │  │               serenada-call-ui (call flow)                │ │
 │  │                                                           │ │
-│  │  Joining screen        Waiting screen     In-call screen  │ │
-│  │  Error recovery        Ended screen       Control bar     │ │
+│  │  Permission gate       Joining screen     Waiting screen  │ │
+│  │  In-call screen        Error recovery     Ended screen    │ │
 │  │  Video tiles/layout    Status overlay     Debug overlay    │ │
 │  │  Theming               Feature toggles    English strings  │ │
 │  │  ┌────────────────────────────────────────────────────┐  │ │
@@ -35,7 +35,7 @@ Synthesized from six independent and cross-pollinated analyses (Claude v1/v2, Co
 │  │  │  WebRTC engine       ICE / TURN       Media ctrl    │  │ │
 │  │  │  Camera modes        Reconnection     Resilience    │  │ │
 │  │  │  URL parsing         Layout algo      Room creation │  │ │
-│  │  │  Lifecycle hooks     Permissions                    │  │ │
+│  │  │  Lifecycle hooks     Permission preflight           │  │ │
 │  │  └────────────────────────────────────────────────────┘  │ │
 │  └──────────────────────────────────────────────────────────┘ │
 └───────────────────────────────────────────────────────────────┘
@@ -53,37 +53,43 @@ Core includes a `createRoom()` convenience method. Someone has to create the roo
 
 This is a convenience, not the primary path. The primary contract remains URL-in. Host apps that create rooms through their own backend can ignore this method entirely.
 
-### 2. Permissions: core owns everything
+### 2. Permissions: core signals, call-ui or host prompts
 
-- **core** checks for required permissions (camera, microphone) before joining — it needs them, so it's the right place to detect and request
-- When permissions are missing, core invokes a **delegate/callback** with the list of required capabilities, then pauses the join flow until the host app responds
-- **core** also provides `SerenadaPermissions.request()` — a convenience utility that triggers the standard OS prompt
-- If no delegate is set, core calls `SerenadaPermissions.request()` itself as fallback — so the simplest integration just works
-- **call-ui** has no role in permissions
-- Host apps that want a custom rationale screen implement the delegate; everyone else gets the default behavior for free
+- **core** detects when camera or microphone permissions are missing and exposes that as a structured blocked state or callback
+- **core** never shows OS permission UI directly
+- **call-ui** exposes `SerenadaPermissions.request()` as a convenience helper and uses it automatically in URL-first flows
+- Host apps using **session-first** or **core-only** integration can call the same helper from the structured callback, or use their own custom rationale + permission flow
+- After permissions are granted, the host app or call-ui resumes the pending join
 
 ```swift
-// iOS — custom permission handling
-core.delegate = self
-func core(_ core: SerenadaCore, requiresPermissions permissions: [MediaCapability],
-          completion: @escaping (Bool) -> Void) {
-    // Option A: use the built-in convenience (same as the default fallback)
-    SerenadaPermissions.request(permissions, completion: completion)
-    // Option B: show your own rationale UI first, then call completion(true/false)
+// iOS — session-first flow
+let session = serenada.join(url: url)
+session.onPermissionsRequired = { permissions in
+    SerenadaPermissions.request(permissions) { granted in
+        if granted {
+            session.resumeJoin()
+        } else {
+            session.cancelJoin()
+        }
+    }
 }
 ```
 
 ```kotlin
-// Android — custom permission handling
-core.onPermissionsRequired = { permissions, grant ->
-    SerenadaPermissions.request(activity, permissions, grant)
+// Android — session-first flow
+session.onPermissionsRequired = { permissions ->
+    SerenadaPermissions.request(activity, permissions) { granted ->
+        if (granted) session.resumeJoin() else session.cancelJoin()
+    }
 }
 ```
 
 ```typescript
-// Web — custom permission handling
-core.onPermissionsRequired = async (permissions) => {
-    return SerenadaPermissions.request(permissions)
+// Web — session-first flow
+session.onPermissionsRequired = async (permissions) => {
+    const granted = await SerenadaPermissions.request(permissions)
+    if (granted) session.resumeJoin()
+    else session.cancelJoin()
 }
 ```
 
@@ -164,7 +170,7 @@ Single observable state object, same shape on all platforms:
 
 ```
 CallState {
-    phase: .idle | .joining | .waiting | .inCall | .ending | .error
+    phase: .idle | .awaitingPermissions | .joining | .waiting | .inCall | .ending | .error
     roomId: String?
     roomUrl: URL?
     localParticipant: Participant {
@@ -182,6 +188,7 @@ CallState {
     }
     connectionStatus: .connected | .recovering | .retrying
     activeTransport: "ws" | "sse"
+    requiredPermissions: [MediaCapability]?
     error: CallError?
 }
 ```
@@ -228,10 +235,9 @@ For host apps that need to handle permissions, respond to call events, or integr
 
 ```
 protocol SerenadaCoreDelegate {
-    // Permissions — called when core needs camera/mic access before joining
-    // Host app must call completion(true) to proceed or completion(false) to abort
-    func core(_ core: SerenadaCore, requiresPermissions: [MediaCapability],
-              completion: @escaping (Bool) -> Void)
+    // Permissions — structured signal only; host app or call-ui decides how to prompt
+    func sessionRequiresPermissions(_ session: SerenadaSession,
+                                    permissions: [MediaCapability])
 
     // Lifecycle
     func sessionDidChangeState(_ session: SerenadaSession, state: CallState)
@@ -239,7 +245,7 @@ protocol SerenadaCoreDelegate {
 }
 ```
 
-The permissions callback is the only **required** delegate method. If no delegate is set, core will attempt to request permissions directly as a fallback (matching default platform behavior).
+The permissions callback is optional. If no delegate is set, `call-ui` handles prompting in URL-first flows; core-only integrators prompt however they want and then call `resumeJoin()`.
 
 ---
 
@@ -363,8 +369,8 @@ Any string not overridden falls back to the bundled English default.
 | `SignalingClient` + transports (WS, SSE) | Yes | internal |
 | `WebRtcEngine` + `PeerConnectionSlot` | Yes | internal |
 | Call orchestration logic (from `CallManager`) | Yes | public facade (`SerenadaSession`) |
-| `CallUiState`, `CallPhase`, `RemoteParticipant`, models | Yes | public |
-| `APIClient` (TURN credentials + room creation) | Yes | internal (room creation exposed via public `createRoom()`) |
+| SDK-native `CallState`, `CallPhase`, `Participant`, models | Yes | public |
+| Call-only API client (TURN credentials + room creation) | Yes | internal (room creation exposed via public `createRoom()`) |
 | `SignalingMessage`, protocol v1 envelope | Yes | internal |
 | Audio session controller | Yes | internal |
 | Camera modes (selfie/world/composite) | Yes | internal |
@@ -373,14 +379,13 @@ Any string not overridden falls back to the bundled English default.
 | Resilience constants & retry logic | Yes | internal |
 | Screen sharing engine | Yes | internal, exposed via session controls |
 | URL parsing / `DeepLinkParser` | Yes | public utility |
-| `SerenadaPermissions` utility | Yes | public utility — convenience for OS permission prompts |
-| Permission check + delegate | Yes | public — core checks on `join()`, invokes delegate if set |
+| Permission preflight + blocked-state signaling | Yes | public — core checks on `join()`, then pauses |
 
 ### serenada-call-ui
 
 | Component | Notes |
 |---|---|
-| Call flow container | Joining → waiting → in-call → error → ended |
+| Call flow container | Awaiting permissions → joining → waiting → in-call → error → ended |
 | Video renderers / tiles | Platform-native rendering with layout engine |
 | Control bar | Mute, camera, hang up, flip, screen share |
 | Connection status overlay | "Connecting...", "Reconnecting..." |
@@ -429,7 +434,9 @@ Sources/Core/Call/PeerConnectionSlot.swift   → SerenadaCore: internal
 Sources/Core/Call/CallAudioSessionController → SerenadaCore: internal
 Sources/Core/Signaling/*                     → SerenadaCore: internal
 Sources/Core/Models/*                        → SerenadaCore: public models
-Sources/Core/Networking/APIClient.swift      → SerenadaCore: internal (TURN + room creation)
+Sources/Core/Networking/APIClient.swift      → split first:
+                                              call-only client (TURN + room creation) → SerenadaCore
+                                              push / diagnostic / invite endpoints → host app
 Sources/Core/Utils/DeepLinkParser.swift      → SerenadaCore: public
 Sources/Core/Layout/ComputeLayout.swift      → SerenadaCore: public utility
 
@@ -465,7 +472,9 @@ call/WebRtcEngine.kt               → core: internal
 call/SignalingClient.kt             → core: internal
 call/CompositeCameraCapturer.kt     → core: internal
 call/PeerConnectionSlot.kt          → core: internal
-network/ApiClient.kt                → core: internal (TURN + room creation)
+network/ApiClient.kt                → split first:
+                                      call-only client (TURN + room creation) → core
+                                      push / diagnostic / invite endpoints → :app
 layout/ComputeLayout.kt             → core: public utility
 i18n/*                              → call-ui: English strings only; host provides other locales
 
@@ -501,7 +510,8 @@ contexts/signaling/transports/*     → @serenada/core: internal
 contexts/localVideoRecovery.ts      → @serenada/core: internal
 layout/computeLayout.ts             → @serenada/core: public export
 constants/webrtcResilience.ts       → @serenada/core: internal
-utils/roomApi.ts                    → @serenada/core: internal (TURN + room creation)
+utils/roomApi.ts                    → @serenada/core: room-creation helper only
+                                      create separate call-only REST client for TURN / call setup
 
 pages/CallRoom.tsx                  → @serenada/react-ui: <SerenadaCallFlow>
                                       Break into: ParticipantGrid, ControlBar,
@@ -580,8 +590,10 @@ Use npm workspaces (`client/packages/core`, `client/packages/react-ui`) to devel
 - [ ] Move `Sources/Core/Call/PeerConnectionSlot.swift` → `SerenadaCore/Sources/` (mark `internal`)
 - [ ] Move `Sources/Core/Call/CallAudioSessionController.swift` → `SerenadaCore/Sources/` (mark `internal`)
 - [ ] Move `Sources/Core/Signaling/*` → `SerenadaCore/Sources/` (mark `internal`)
-- [ ] Move `Sources/Core/Models/*` → `SerenadaCore/Sources/` (mark `public`)
-- [ ] Move `Sources/Core/Networking/APIClient.swift` → `SerenadaCore/Sources/` (mark `internal`)
+- [ ] Move only SDK-native models into `SerenadaCore/Sources/` (mark `public`) — do NOT publish current UI-flavored state objects as-is
+- [ ] Split `Sources/Core/Networking/APIClient.swift` into:
+  - [ ] call-only client (TURN + room creation) → `SerenadaCore/Sources/`
+  - [ ] host-only client (push / diagnostics / invite) → app target
 - [ ] Move `Sources/Core/Utils/DeepLinkParser.swift` → `SerenadaCore/Sources/` (mark `public`)
 - [ ] Move `Sources/Core/Layout/ComputeLayout.swift` → `SerenadaCore/Sources/` (mark `public`)
 - [ ] Fix all import paths in moved files
@@ -590,9 +602,10 @@ Use npm workspaces (`client/packages/core`, `client/packages/react-ui`) to devel
 #### Split CallManager.swift
 
 - [ ] Create `SerenadaSession.swift` in `SerenadaCore/Sources/` as a `public class`
-- [ ] Define the public `CallState` struct with all fields (phase, participants, connectionStatus, etc.)
+- [ ] Define a new public `CallState` struct with SDK-native fields only (do not reuse current app `CallUiState`)
 - [ ] Move signaling, WebRTC orchestration, media control, and reconnection logic from `CallManager` into internal classes that `SerenadaSession` delegates to
 - [ ] Expose public methods on `SerenadaSession`: `leave()`, `end()`, `toggleAudio()`, `toggleVideo()`, `flipCamera()`, `setCameraMode()`, `startScreenShare()`, `stopScreenShare()`
+- [ ] Expose `resumeJoin()` and `cancelJoin()` for blocked preconditions such as permissions
 - [ ] Expose renderer attachment: `attachLocalRenderer()`, `attachRemoteRenderer()`
 - [ ] Expose `@Published var state: CallState` for observation
 - [ ] Strip host-app concerns out of the session engine:
@@ -612,12 +625,10 @@ Use npm workspaces (`client/packages/core`, `client/packages/react-ui`) to devel
 - [ ] Implement `public func join(roomId: String) -> SerenadaSession`
 - [ ] Implement `public func createRoom(completion: (CreateRoomResult) -> Void)`
 - [ ] Define `SerenadaCoreDelegate` protocol:
-  - [ ] `requiresPermissions` callback (required — core pauses join until host responds)
+  - [ ] `sessionRequiresPermissions` callback (optional — core pauses join until host or call-ui resumes)
   - [ ] `sessionDidChangeState` callback
   - [ ] `sessionDidEnd` callback
-- [ ] Create `SerenadaPermissions` utility in core:
-  - [ ] Implement `request(_ permissions: [MediaCapability], completion: (Bool) -> Void)` — triggers OS prompts for camera/mic
-- [ ] Implement permission check in `join()` — detect missing camera/mic, invoke delegate if set, otherwise call `SerenadaPermissions.request()` as fallback
+- [ ] Implement permission preflight in `join()` — detect missing camera/mic, set `state.phase = .awaitingPermissions`, populate `requiredPermissions`, and invoke delegate if set
 - [ ] Build — should compile
 
 #### Rewire iOS host app
@@ -651,14 +662,14 @@ Use npm workspaces (`client/packages/core`, `client/packages/react-ui`) to devel
 - [ ] Extract reconnection and resilience logic from `constants/webrtcResilience.ts` → `packages/core/src/media/`
 - [ ] Extract `localVideoRecovery.ts` → `packages/core/src/media/`
 - [ ] Move `layout/computeLayout.ts` → `packages/core/src/layout/`
-- [ ] Move `utils/roomApi.ts` → `packages/core/src/api/` (TURN + room creation)
+- [ ] Move `utils/roomApi.ts` → `packages/core/src/api/` as room-creation helper only
+- [ ] Create a separate call-only REST client in `packages/core/src/api/` for TURN / call setup concerns
 - [ ] Implement `SerenadaSession` with: `subscribe(callback)`, `join()`, `leave()`, `end()`, `toggleAudio()`, `toggleVideo()`, `flipCamera()`, media stream getters
 - [ ] Implement `createSerenadaCore()` factory with `SerenadaConfig`
 - [ ] Implement `createRoom()` convenience method
-- [ ] Implement `onPermissionsRequired` callback on core config
-- [ ] Create `SerenadaPermissions.request()` utility — wraps `navigator.mediaDevices.getUserMedia`
-- [ ] Implement permission check in `join()` — detect missing camera/mic, invoke callback if set, otherwise call `SerenadaPermissions.request()` as fallback
-- [ ] Export public types: `CallState`, `Participant`, `CallPhase`, `CallError`, `SerenadaPermissions`
+- [ ] Implement `onPermissionsRequired` callback on `SerenadaSession`
+- [ ] Implement permission preflight in `join()` — detect missing camera/mic, set `phase = 'awaitingPermissions'`, expose `requiredPermissions`, and pause
+- [ ] Export public types: `CallState`, `Participant`, `CallPhase`, `CallError`
 - [ ] Build `@serenada/core` — should compile
 - [ ] Verify zero React/ReactDOM imports in `@serenada/core`
 
@@ -690,7 +701,9 @@ Use npm workspaces (`client/packages/core`, `client/packages/react-ui`) to devel
 - [ ] Move `call/SignalingClient.kt` → `:serenada-core` (mark `internal`)
 - [ ] Move `call/CompositeCameraCapturer.kt` → `:serenada-core` (mark `internal`)
 - [ ] Move `call/PeerConnectionSlot.kt` → `:serenada-core` (mark `internal`)
-- [ ] Move `network/ApiClient.kt` → `:serenada-core` (mark `internal`, keep TURN + room creation)
+- [ ] Split `network/ApiClient.kt` into:
+  - [ ] call-only client (TURN + room creation) → `:serenada-core`
+  - [ ] host-only client (push / diagnostics / invite) → `:app`
 - [ ] Move `layout/ComputeLayout.kt` → `:serenada-core` (mark `public`)
 - [ ] Move signaling-related models → `:serenada-core` (mark `public` where needed)
 - [ ] Fix all import paths
@@ -699,10 +712,11 @@ Use npm workspaces (`client/packages/core`, `client/packages/react-ui`) to devel
 #### Split CallManager.kt
 
 - [ ] Create `SerenadaSession.kt` in `:serenada-core` as a public class
-- [ ] Define `CallState` data class with all fields
+- [ ] Define a new `CallState` data class with SDK-native fields only (do not reuse current app `CallUiState`)
 - [ ] Expose `StateFlow<CallState>` for observation
 - [ ] Move signaling, WebRTC orchestration, media control, and reconnection logic from `CallManager` into internal classes
 - [ ] Expose public methods: `leave()`, `end()`, `toggleAudio()`, `toggleVideo()`, `flipCamera()`, `setCameraMode()`, `startScreenShare()`, `stopScreenShare()`
+- [ ] Expose `resumeJoin()` and `cancelJoin()`
 - [ ] Expose renderer attachment: `attachLocalRenderer()`, `attachRemoteRenderer()`
 - [ ] Strip host-app concerns:
   - [ ] Remove saved rooms logic → move to `:app`
@@ -720,12 +734,10 @@ Use npm workspaces (`client/packages/core`, `client/packages/react-ui`) to devel
 - [ ] Implement `fun join(roomId: String): SerenadaSession`
 - [ ] Implement `fun createRoom(callback: (CreateRoomResult) -> Unit)`
 - [ ] Define `SerenadaCoreDelegate` interface:
-  - [ ] `onPermissionsRequired` callback
+  - [ ] `onPermissionsRequired` callback (optional — core pauses join until host or call-ui resumes)
   - [ ] `onSessionStateChanged` callback
   - [ ] `onSessionEnded` callback
-- [ ] Create `SerenadaPermissions` utility in core:
-  - [ ] Implement `request(activity, permissions, callback)` — triggers OS prompts for camera/mic
-- [ ] Implement permission check in `join()` — detect missing camera/mic, invoke delegate if set, otherwise call `SerenadaPermissions.request()` as fallback
+- [ ] Implement permission preflight in `join()` — detect missing camera/mic, set `CallState.phase = AwaitingPermissions`, expose `requiredPermissions`, and pause
 - [ ] Build — should compile
 
 #### Rewire Android host app
@@ -767,7 +779,10 @@ With core extracted and stable on all platforms, build the call-ui layer.
   - [ ] Accept `config: SerenadaCallFlowConfig` (feature toggles)
   - [ ] Accept `strings: [SerenadaString: String]` (optional overrides)
   - [ ] Accept `onDismiss` callback
-  - [ ] Implement state-driven flow: joining → waiting → in-call → error → ended
+  - [ ] Implement state-driven flow: awaiting permissions → joining → waiting → in-call → error → ended
+- [ ] Create `SerenadaPermissions` helper in `SerenadaCallUI`
+- [ ] In URL-first mode, automatically prompt via `SerenadaPermissions` when session enters `awaitingPermissions`
+- [ ] In session-first mode, expose `SerenadaPermissions` for host apps to call from `sessionRequiresPermissions`
 - [ ] Define `SerenadaCallFlowConfig`:
   - [ ] `screenSharingEnabled: Bool` (default `true`)
   - [ ] `inviteControlsEnabled: Bool` (default `true`)
@@ -788,7 +803,10 @@ With core extracted and stable on all platforms, build the call-ui layer.
   - [ ] Accept `config: SerenadaCallFlowConfig` (feature toggles)
   - [ ] Accept `strings: Map<SerenadaString, String>` (optional overrides)
   - [ ] Accept `onDismiss` callback
-  - [ ] Implement state-driven flow
+  - [ ] Implement state-driven flow, including `AwaitingPermissions`
+- [ ] Create `SerenadaPermissions` helper in `:serenada-call-ui`
+- [ ] In URL-first mode, automatically prompt via `SerenadaPermissions` when session enters `AwaitingPermissions`
+- [ ] In session-first mode, expose `SerenadaPermissions` for host apps to call from `onPermissionsRequired`
 - [ ] Define `SerenadaCallFlowConfig` data class with same fields as iOS
 - [ ] Define `SerenadaString` enum
 - [ ] Bundle default English string resources
@@ -806,7 +824,10 @@ With core extracted and stable on all platforms, build the call-ui layer.
   - [ ] Accept `config` prop (feature toggles)
   - [ ] Accept `strings` prop (optional overrides)
   - [ ] Accept `onDismiss` callback
-  - [ ] Implement state-driven flow
+  - [ ] Implement state-driven flow, including `awaitingPermissions`
+- [ ] Export `SerenadaPermissions.request()` helper from `@serenada/react-ui`
+- [ ] In URL-first mode, automatically prompt via `SerenadaPermissions` when session enters `awaitingPermissions`
+- [ ] In session-first mode, expose `SerenadaPermissions` for host apps to call from `onPermissionsRequired`
 - [ ] Define `SerenadaCallFlowConfig` type with same fields
 - [ ] Define string key types
 - [ ] Bundle default English strings
@@ -874,6 +895,7 @@ Final cleanup to prove the SDK boundary is real.
 - Do not bundle non-English strings in call-ui — host app provides additional locales
 - Do not require host apps to subclass SDK types — use composition and delegates
 - Do not hard-code call-ui features — use feature toggles so host apps can hide what they don't need
+- Do not show OS permission UI directly from core — signal blocked state, let call-ui or host prompt
 
 ---
 
