@@ -1,0 +1,984 @@
+# Serenada SDK — Final Architecture & Implementation Plan
+
+Synthesized from six independent and cross-pollinated analyses (Claude v1/v2, Codex v1/v2, Gemini v1/v2). This document resolves all remaining disagreements and provides an implementation-ready plan.
+
+---
+
+## Core Principle
+
+> The reusable boundary is the **call flow**, not the product shell. Give the SDK a URL, it handles the rest.
+
+---
+
+## Architecture
+
+```
+┌───────────────────────────────────────────────────────────────┐
+│                          HOST APP                              │
+│                                                                │
+│  Push notifications      Deep link routing     App navigation  │
+│  Room management UI      Settings UI           Persistence     │
+│  Foreground service      App extensions        Firebase init   │
+│  Room sharing UX         Diagnostics screen    Branding        │
+│                                                                │
+│  ┌──────────────────────────────────────────────────────────┐ │
+│  │               serenada-call-ui (call flow)                │ │
+│  │                                                           │ │
+│  │  Joining screen        Waiting screen     In-call screen  │ │
+│  │  Error recovery        Ended screen       Control bar     │ │
+│  │  Video tiles/layout    Status overlay     Debug overlay    │ │
+│  │  Theming               Feature toggles    English strings  │ │
+│  │  ┌────────────────────────────────────────────────────┐  │ │
+│  │  │              serenada-core (headless)                │  │ │
+│  │  │                                                     │  │ │
+│  │  │  SerenadaSession     CallState        Signaling     │  │ │
+│  │  │  WebRTC engine       ICE / TURN       Media ctrl    │  │ │
+│  │  │  Camera modes        Reconnection     Resilience    │  │ │
+│  │  │  URL parsing         Layout algo      Room creation │  │ │
+│  │  │  Lifecycle hooks     Permissions                    │  │ │
+│  │  └────────────────────────────────────────────────────┘  │ │
+│  └──────────────────────────────────────────────────────────┘ │
+└───────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Resolved Decisions
+
+These resolve every disagreement that remained across the v2 proposals.
+
+### 1. Room creation: convenience method in core
+
+Core includes a `createRoom()` convenience method. Someone has to create the room, and bundling this in core makes integration easier — especially for third-party apps that don't have their own backend. The method calls `POST /api/room-id` on the configured `serverHost` and returns a joinable URL + session.
+
+This is a convenience, not the primary path. The primary contract remains URL-in. Host apps that create rooms through their own backend can ignore this method entirely.
+
+### 2. Permissions: core owns everything
+
+- **core** checks for required permissions (camera, microphone) before joining — it needs them, so it's the right place to detect and request
+- When permissions are missing, core invokes a **delegate/callback** with the list of required capabilities, then pauses the join flow until the host app responds
+- **core** also provides `SerenadaPermissions.request()` — a convenience utility that triggers the standard OS prompt
+- If no delegate is set, core calls `SerenadaPermissions.request()` itself as fallback — so the simplest integration just works
+- **call-ui** has no role in permissions
+- Host apps that want a custom rationale screen implement the delegate; everyone else gets the default behavior for free
+
+```swift
+// iOS — custom permission handling
+core.delegate = self
+func core(_ core: SerenadaCore, requiresPermissions permissions: [MediaCapability],
+          completion: @escaping (Bool) -> Void) {
+    // Option A: use the built-in convenience (same as the default fallback)
+    SerenadaPermissions.request(permissions, completion: completion)
+    // Option B: show your own rationale UI first, then call completion(true/false)
+}
+```
+
+```kotlin
+// Android — custom permission handling
+core.onPermissionsRequired = { permissions, grant ->
+    SerenadaPermissions.request(activity, permissions, grant)
+}
+```
+
+```typescript
+// Web — custom permission handling
+core.onPermissionsRequired = async (permissions) => {
+    return SerenadaPermissions.request(permissions)
+}
+```
+
+### 3. i18n: English-only default, host provides additional locales
+
+- **core** exposes structured state enums and error codes (e.g., `CallPhase.waiting`, `CallError.signalingTimeout`)
+- **call-ui** bundles **English strings only** as the default
+- Host apps provide additional localizations via a strings configuration object on `SerenadaCallFlow`
+- Host apps can also override any default English string through the same mechanism
+- Core-only integrators map states/errors to their own copy
+
+### 4. Layout helpers: in core as optional public utility
+
+`computeLayout` is a pure function with no UI dependency. It belongs in core so that both call-ui and core-only integrators can use it. Exported as an optional utility, not part of the session API.
+
+### 5. WebRTC binary: bundled
+
+The custom WebRTC build (branch-heads/7559_173) is bundled with core. This is standard practice for video SDKs and eliminates integration complexity. The custom build is essential for composite camera and other Serenada-specific features.
+
+### 6. Versioning: core and call-ui ship together
+
+Same version number, released together. call-ui declares an exact dependency on core. This stays simple until the API stabilizes. Semantic versioning from 0.1.0 onward.
+
+---
+
+## Core API Surface
+
+Consistent across all three platforms, adapted to each platform's idioms.
+
+### Initialization
+
+```swift
+// Swift
+let serenada = SerenadaCore(config: .init(serverHost: "serenada.app"))
+
+// Kotlin
+val serenada = SerenadaCore(config = SerenadaConfig(serverHost = "serenada.app"))
+
+// TypeScript
+const serenada = createSerenadaCore({ serverHost: 'serenada.app' })
+```
+
+**`SerenadaConfig`**:
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `serverHost` | `String` | required | Default server for URL resolution |
+| `defaultAudioEnabled` | `Bool` | `true` | Mic on/off at join |
+| `defaultVideoEnabled` | `Bool` | `true` | Camera on/off at join |
+| `transports` | `[.ws, .sse]` | both | Allows override for testing |
+
+### Call Lifecycle
+
+```
+// Join by URL (primary path)
+let session = serenada.join(url: "https://serenada.app/call/ABC123")
+
+// Join by room ID (uses configured serverHost)
+let session = serenada.join(roomId: "ABC123")
+
+// Create a new room (convenience — calls POST /api/room-id on serverHost)
+serenada.createRoom { result in
+    let url = result.url          // "https://serenada.app/call/XYZ789"
+    let session = result.session  // already joining
+    // share url with the other party
+}
+
+// Leave (local participant exits, room stays open)
+session.leave()
+
+// End (terminates room for all — if permitted)
+session.end()
+```
+
+### Observable Call State
+
+Single observable state object, same shape on all platforms:
+
+```
+CallState {
+    phase: .idle | .joining | .waiting | .inCall | .ending | .error
+    roomId: String?
+    roomUrl: URL?
+    localParticipant: Participant {
+        cid: String
+        audioEnabled: Bool
+        videoEnabled: Bool
+        cameraMode: .selfie | .world | .composite | .screenShare
+        isHost: Bool
+    }
+    remoteParticipants: [Participant] {
+        cid: String
+        audioEnabled: Bool
+        videoEnabled: Bool
+        connectionState: String
+    }
+    connectionStatus: .connected | .recovering | .retrying
+    activeTransport: "ws" | "sse"
+    error: CallError?
+}
+```
+
+**Platform-specific observation**:
+- **iOS**: `@Published` / Combine / `AsyncSequence` on `SerenadaSession`
+- **Android**: `StateFlow<CallState>` on `SerenadaSession`
+- **Web**: `session.subscribe(callback)` — framework-agnostic; call-ui wraps in React hook
+
+### Media Controls
+
+```
+session.toggleAudio()
+session.toggleVideo()
+session.flipCamera()              // cycles: selfie → world → composite → selfie
+session.setAudioEnabled(true)
+session.setVideoEnabled(false)
+session.setCameraMode(.world)
+session.startScreenShare(intent)  // Android: MediaProjection; iOS: requires host extension
+session.stopScreenShare()
+```
+
+### Video Rendering
+
+Core provides renderer attachment points, not views:
+
+```
+// iOS: RTCVideoRenderer
+session.attachLocalRenderer(renderer)
+session.attachRemoteRenderer(renderer, forParticipant: cid)
+
+// Android: SurfaceViewRenderer
+session.attachLocalRenderer(renderer)
+session.attachRemoteRenderer(renderer, cid)
+
+// Web: MediaStream
+session.localStream                // MediaStream
+session.remoteStreams               // Map<cid, MediaStream>
+```
+
+### Delegate / Lifecycle Hooks
+
+For host apps that need to handle permissions, respond to call events, or integrate with platform services:
+
+```
+protocol SerenadaCoreDelegate {
+    // Permissions — called when core needs camera/mic access before joining
+    // Host app must call completion(true) to proceed or completion(false) to abort
+    func core(_ core: SerenadaCore, requiresPermissions: [MediaCapability],
+              completion: @escaping (Bool) -> Void)
+
+    // Lifecycle
+    func sessionDidChangeState(_ session: SerenadaSession, state: CallState)
+    func sessionDidEnd(_ session: SerenadaSession, reason: EndReason)
+}
+```
+
+The permissions callback is the only **required** delegate method. If no delegate is set, core will attempt to request permissions directly as a fallback (matching default platform behavior).
+
+---
+
+## Call-UI API Surface
+
+The call-ui component is named `SerenadaCallFlow` — it handles the entire visual sequence from joining through call end.
+
+### URL-first (simplest integration)
+
+```swift
+// iOS
+SerenadaCallFlow(url: serenadaURL, onDismiss: { dismiss() })
+
+// Android
+SerenadaCallFlow(url = serenadaUrl, onDismiss = { navController.popBackStack() })
+
+// Web
+<SerenadaCallFlow url={serenadaUrl} onDismiss={() => navigate('/')} />
+```
+
+### Session-first (for pre-observation)
+
+```swift
+// iOS
+let session = serenada.join(url: url)
+SerenadaCallFlow(session: session)
+    .serenadaTheme(.init(accentColor: .blue))
+    .onCallEnded { reason in dismiss() }
+```
+
+### Feature Toggles
+
+Host apps can hide optional call-ui features via `SerenadaCallFlowConfig`:
+
+```swift
+// Swift
+SerenadaCallFlow(url: url, config: .init(
+    screenSharingEnabled: false,   // hides screen share button (default: true)
+    inviteControlsEnabled: false   // hides QR code + invite/share buttons (default: true)
+))
+
+// Kotlin
+SerenadaCallFlow(
+    url = url,
+    config = SerenadaCallFlowConfig(
+        screenSharingEnabled = false,
+        inviteControlsEnabled = false
+    )
+)
+```
+
+```tsx
+// Web
+<SerenadaCallFlow
+    url={url}
+    config={{
+        screenSharingEnabled: false,
+        inviteControlsEnabled: false,
+    }}
+/>
+```
+
+**`SerenadaCallFlowConfig`**:
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `screenSharingEnabled` | `Bool` | `true` | Show/hide screen share control |
+| `inviteControlsEnabled` | `Bool` | `true` | Show/hide QR code and invite/share buttons |
+| `debugOverlayEnabled` | `Bool` | `false` | Show/hide the debug stats overlay toggle |
+
+When a feature is disabled, the corresponding control is removed from the UI entirely (not just greyed out). Core still supports the underlying functionality — these toggles only affect call-ui's presentation.
+
+### Theming
+
+```swift
+SerenadaCallFlowTheme {
+    accentColor: Color
+    backgroundColor: Color
+    controlBarStyle: ControlBarStyle
+    // platform-specific additions
+}
+```
+
+### String Overrides
+
+Host apps provide localizations or override default English strings via a strings map:
+
+```swift
+// Swift
+SerenadaCallFlow(url: url, strings: [
+    .waitingForOther: "Esperando al otro participante...",
+    .reconnecting: "Reconectando...",
+    .hangUp: "Colgar"
+])
+
+// Kotlin
+SerenadaCallFlow(url = url, strings = mapOf(
+    SerenadaString.WaitingForOther to "Ожидание другого участника...",
+    SerenadaString.Reconnecting to "Переподключение..."
+))
+```
+
+```tsx
+// Web
+<SerenadaCallFlow url={url} strings={{
+    waitingForOther: "En attente de l'autre participant...",
+    reconnecting: "Reconnexion..."
+}} />
+```
+
+Any string not overridden falls back to the bundled English default.
+
+---
+
+## What Lives Where
+
+### serenada-core
+
+| Current code | In core? | Visibility |
+|---|---|---|
+| `SignalingClient` + transports (WS, SSE) | Yes | internal |
+| `WebRtcEngine` + `PeerConnectionSlot` | Yes | internal |
+| Call orchestration logic (from `CallManager`) | Yes | public facade (`SerenadaSession`) |
+| `CallUiState`, `CallPhase`, `RemoteParticipant`, models | Yes | public |
+| `APIClient` (TURN credentials + room creation) | Yes | internal (room creation exposed via public `createRoom()`) |
+| `SignalingMessage`, protocol v1 envelope | Yes | internal |
+| Audio session controller | Yes | internal |
+| Camera modes (selfie/world/composite) | Yes | internal |
+| `CompositeCameraCapturer` | Yes | internal |
+| Layout computation (`computeLayout`) | Yes | public utility |
+| Resilience constants & retry logic | Yes | internal |
+| Screen sharing engine | Yes | internal, exposed via session controls |
+| URL parsing / `DeepLinkParser` | Yes | public utility |
+| `SerenadaPermissions` utility | Yes | public utility — convenience for OS permission prompts |
+| Permission check + delegate | Yes | public — core checks on `join()`, invokes delegate if set |
+
+### serenada-call-ui
+
+| Component | Notes |
+|---|---|
+| Call flow container | Joining → waiting → in-call → error → ended |
+| Video renderers / tiles | Platform-native rendering with layout engine |
+| Control bar | Mute, camera, hang up, flip, screen share |
+| Connection status overlay | "Connecting...", "Reconnecting..." |
+| Debug overlay (optional) | Toggle-able in-call stats panel |
+| Participant pinning | Multi-party layout with focus |
+| Join chime | Audio feedback on participant arrival |
+| Default English strings | Host provides additional locales via config |
+| Feature toggles | Screen sharing, invite controls — hideable per-config |
+| Theming | Colors, fonts via config object |
+
+### Host app (stays out of SDK)
+
+| Component | Why |
+|---|---|
+| Push notifications (FCM, APNs, Web Push) | App-level infrastructure, different per app |
+| Push snapshot encryption | Coupled with push infrastructure |
+| Deep link / Universal Link registration | OS-level, bound to host bundle ID |
+| Home screen / room management UI | App-specific UX |
+| Room sharing UX / custom creation flows | App-level UX (core provides `createRoom()` convenience) |
+| Settings UI | App-specific preferences |
+| Foreground service (Android) | Must be declared by host app |
+| Notification service extension (iOS) | App extension target |
+| Broadcast upload extension (iOS) | App extension target |
+| Firebase / third-party SDK init | App-level dependency |
+| Persistence (recent calls, saved rooms) | App-level data |
+| Diagnostics screen (standalone) | Product feature, not call-flow |
+
+---
+
+## Platform-Specific Packaging
+
+### iOS
+
+| Library | Format |
+|---|---|
+| `SerenadaCore` | Swift Package (SPM). Embeds WebRTC.xcframework as binary target. |
+| `SerenadaCallUI` | Swift Package. Depends on `SerenadaCore`. Pure SwiftUI. |
+
+```
+File mapping:
+
+Sources/Core/Call/CallManager.swift         → SerenadaCore: split into SerenadaSession (public)
+                                              + internal orchestration
+Sources/Core/Call/WebRtcEngine.swift         → SerenadaCore: internal
+Sources/Core/Call/PeerConnectionSlot.swift   → SerenadaCore: internal
+Sources/Core/Call/CallAudioSessionController → SerenadaCore: internal
+Sources/Core/Signaling/*                     → SerenadaCore: internal
+Sources/Core/Models/*                        → SerenadaCore: public models
+Sources/Core/Networking/APIClient.swift      → SerenadaCore: internal (TURN + room creation)
+Sources/Core/Utils/DeepLinkParser.swift      → SerenadaCore: public
+Sources/Core/Layout/ComputeLayout.swift      → SerenadaCore: public utility
+
+Sources/UI/Screens/CallScreen.swift          → SerenadaCallUI
+Sources/UI/Components/WebRTCVideoView.swift  → SerenadaCallUI
+Sources/UI/Components/* (call-related)       → SerenadaCallUI
+
+Sources/Core/Push/*                          → stays in host app
+Sources/Core/Stores/*                        → stays in host app
+Sources/App/*                                → stays in host app
+NotificationService/*                        → stays in host app
+BroadcastUpload/*                            → stays in host app
+Sources/UI/Screens/JoinScreen.swift          → stays in host app
+Sources/UI/Screens/SettingsScreen.swift       → stays in host app
+Sources/UI/Screens/DiagnosticsScreen.swift    → stays in host app
+```
+
+### Android
+
+| Library | Format |
+|---|---|
+| `app.serenada:core` | Android library module (AAR). Bundles WebRTC AAR. |
+| `app.serenada:call-ui` | Android library module (AAR). Depends on core. Pure Compose. |
+
+```
+File mapping:
+
+call/CallManager.kt               → core: split into SerenadaSession (public)
+                                     + internal orchestration
+                                     Strip: saved rooms, recent calls, settings,
+                                     push sync, room-status watching, snapshot upload
+call/WebRtcEngine.kt               → core: internal
+call/SignalingClient.kt             → core: internal
+call/CompositeCameraCapturer.kt     → core: internal
+call/PeerConnectionSlot.kt          → core: internal
+network/ApiClient.kt                → core: internal (TURN + room creation)
+layout/ComputeLayout.kt             → core: public utility
+i18n/*                              → call-ui: English strings only; host provides other locales
+
+ui/CallScreen.kt                    → call-ui (break into: ParticipantGrid,
+                                      ControlBar, StatusOverlay sub-composables)
+ui/Theme.kt                         → call-ui (with customization API)
+
+push/*                              → stays in host app
+data/*                              → stays in host app
+service/CallService.kt              → stays in host app (core provides lifecycle hooks)
+ui/JoinScreen.kt                    → stays in host app
+ui/SettingsScreen.kt                → stays in host app
+ui/DiagnosticsScreen.kt             → stays in host app
+ui/SerenadaAppRoot.kt               → stays in host app
+SerenadaApp.kt, MainActivity.kt    → stays in host app
+```
+
+Update `settings.gradle.kts` to add `:serenada-core` and `:serenada-call-ui` modules.
+
+### Web
+
+| Library | Format |
+|---|---|
+| `@serenada/core` | npm package. Vanilla TypeScript. No React dependency. |
+| `@serenada/react-ui` | npm package. React components. Depends on `@serenada/core`. |
+
+```
+File mapping:
+
+contexts/SignalingContext.tsx        → @serenada/core: SerenadaSignaling class (vanilla TS)
+contexts/WebRTCContext.tsx           → @serenada/core: SerenadaMedia class (vanilla TS)
+contexts/signaling/transports/*     → @serenada/core: internal
+contexts/localVideoRecovery.ts      → @serenada/core: internal
+layout/computeLayout.ts             → @serenada/core: public export
+constants/webrtcResilience.ts       → @serenada/core: internal
+utils/roomApi.ts                    → @serenada/core: internal (TURN + room creation)
+
+pages/CallRoom.tsx                  → @serenada/react-ui: <SerenadaCallFlow>
+                                      Break into: ParticipantGrid, ControlBar,
+                                      StatusOverlay, DebugPanel sub-components
+pages/callDiagnostics.ts            → @serenada/react-ui: internal (debug overlay)
+i18n.ts + translations              → @serenada/react-ui: English only; host provides other locales
+
+utils/pushCrypto.ts                 → stays in host app
+utils/callHistory.ts                → stays in host app
+utils/savedRooms.ts                 → stays in host app
+pages/Home.tsx                      → stays in host app
+components/RecentCalls.tsx          → stays in host app
+components/SavedRooms.tsx           → stays in host app
+components/SavedRoomDialog.tsx      → stays in host app
+public/sw.js                        → stays in host app
+App.tsx, main.tsx                   → stays in host app
+```
+
+Use npm workspaces (`client/packages/core`, `client/packages/react-ui`) to develop alongside the host app.
+
+---
+
+## Implementation Plan
+
+### Phase 0: Pre-work
+
+**Goal**: Prepare the ground without changing any behavior.
+
+#### CallManager Audit
+
+- [ ] Read `CallManager.swift` (iOS) — list every public method and property
+- [ ] Read `CallManager.kt` (Android) — list every public method and property
+- [ ] Read `SignalingContext.tsx` + `WebRTCContext.tsx` (Web) — list every exported function/hook
+- [ ] Classify each method as **SDK** (signaling, media, call state, TURN, reconnection, room creation) or **host** (push sync, saved rooms, recent calls, settings persistence, room-status watching, snapshot upload)
+- [ ] Document the classification in a shared spreadsheet or markdown table
+- [ ] Identify methods that straddle both categories and plan how to split them
+
+#### Module Scaffolding — iOS
+
+- [ ] Create a `SerenadaCore` Swift Package directory under `client-ios/`
+- [ ] Add `SerenadaCore` as a local package product in `project.yml`
+- [ ] Create a `SerenadaCallUI` Swift Package directory under `client-ios/`
+- [ ] Add `SerenadaCallUI` as a local package product in `project.yml` with dependency on `SerenadaCore`
+- [ ] Add `WebRTC.xcframework` as a binary target in the `SerenadaCore` package
+- [ ] Update the app target in `project.yml` to depend on both local packages
+- [ ] Run `xcodegen generate` and verify the project opens cleanly
+- [ ] Build the app — should compile with empty library modules
+
+#### Module Scaffolding — Android
+
+- [ ] Create `:serenada-core` Android library module directory
+- [ ] Create `serenada-core/build.gradle.kts` with library plugin and WebRTC AAR dependency
+- [ ] Create `:serenada-call-ui` Android library module directory
+- [ ] Create `serenada-call-ui/build.gradle.kts` with library plugin and dependency on `:serenada-core`
+- [ ] Update `settings.gradle.kts` to include both new modules
+- [ ] Update `:app` module to depend on `:serenada-core` and `:serenada-call-ui`
+- [ ] Run `./gradlew assembleDebug` — should compile with empty library modules
+
+#### Module Scaffolding — Web
+
+- [ ] Create `client/packages/core/` directory with `package.json` and `tsconfig.json`
+- [ ] Create `client/packages/react-ui/` directory with `package.json` and `tsconfig.json`
+- [ ] Configure npm workspaces in the root `client/package.json`
+- [ ] Add `@serenada/core` as dependency of `@serenada/react-ui`
+- [ ] Add both as dependencies of the Serenada host app
+- [ ] Run `npm install` and `npm run build` — should succeed with empty packages
+- [ ] Run `npm run test` — existing tests should still pass
+
+### Phase 1: Extract Core — iOS
+
+**Why iOS first**: The folder structure (`Sources/Core/` vs `Sources/UI/`) already suggests the target modules. Least resistance.
+
+#### Move files into SerenadaCore
+
+- [ ] Move `Sources/Core/Call/WebRtcEngine.swift` → `SerenadaCore/Sources/` (mark `internal`)
+- [ ] Move `Sources/Core/Call/PeerConnectionSlot.swift` → `SerenadaCore/Sources/` (mark `internal`)
+- [ ] Move `Sources/Core/Call/CallAudioSessionController.swift` → `SerenadaCore/Sources/` (mark `internal`)
+- [ ] Move `Sources/Core/Signaling/*` → `SerenadaCore/Sources/` (mark `internal`)
+- [ ] Move `Sources/Core/Models/*` → `SerenadaCore/Sources/` (mark `public`)
+- [ ] Move `Sources/Core/Networking/APIClient.swift` → `SerenadaCore/Sources/` (mark `internal`)
+- [ ] Move `Sources/Core/Utils/DeepLinkParser.swift` → `SerenadaCore/Sources/` (mark `public`)
+- [ ] Move `Sources/Core/Layout/ComputeLayout.swift` → `SerenadaCore/Sources/` (mark `public`)
+- [ ] Fix all import paths in moved files
+- [ ] Build — should compile
+
+#### Split CallManager.swift
+
+- [ ] Create `SerenadaSession.swift` in `SerenadaCore/Sources/` as a `public class`
+- [ ] Define the public `CallState` struct with all fields (phase, participants, connectionStatus, etc.)
+- [ ] Move signaling, WebRTC orchestration, media control, and reconnection logic from `CallManager` into internal classes that `SerenadaSession` delegates to
+- [ ] Expose public methods on `SerenadaSession`: `leave()`, `end()`, `toggleAudio()`, `toggleVideo()`, `flipCamera()`, `setCameraMode()`, `startScreenShare()`, `stopScreenShare()`
+- [ ] Expose renderer attachment: `attachLocalRenderer()`, `attachRemoteRenderer()`
+- [ ] Expose `@Published var state: CallState` for observation
+- [ ] Strip host-app concerns out of the session engine:
+  - [ ] Remove saved rooms logic → move to host app
+  - [ ] Remove recent calls logic → move to host app
+  - [ ] Remove settings persistence → move to host app
+  - [ ] Remove push subscription sync → move to host app
+  - [ ] Remove room-status watching → move to host app
+  - [ ] Remove snapshot upload → move to host app
+- [ ] Build — should compile
+
+#### Create SerenadaCore entry point
+
+- [ ] Create `SerenadaCore.swift` with `public init(config: SerenadaConfig)`
+- [ ] Define `SerenadaConfig` struct: `serverHost`, `defaultAudioEnabled`, `defaultVideoEnabled`, `transports`
+- [ ] Implement `public func join(url: URL) -> SerenadaSession`
+- [ ] Implement `public func join(roomId: String) -> SerenadaSession`
+- [ ] Implement `public func createRoom(completion: (CreateRoomResult) -> Void)`
+- [ ] Define `SerenadaCoreDelegate` protocol:
+  - [ ] `requiresPermissions` callback (required — core pauses join until host responds)
+  - [ ] `sessionDidChangeState` callback
+  - [ ] `sessionDidEnd` callback
+- [ ] Create `SerenadaPermissions` utility in core:
+  - [ ] Implement `request(_ permissions: [MediaCapability], completion: (Bool) -> Void)` — triggers OS prompts for camera/mic
+- [ ] Implement permission check in `join()` — detect missing camera/mic, invoke delegate if set, otherwise call `SerenadaPermissions.request()` as fallback
+- [ ] Build — should compile
+
+#### Rewire iOS host app
+
+- [ ] Update the Serenada iOS app to `import SerenadaCore`
+- [ ] Replace direct `CallManager` usage with `SerenadaCore` / `SerenadaSession` API
+- [ ] Move push subscription logic into the app target (calling through session state observation)
+- [ ] Move saved rooms / recent calls management into the app target
+- [ ] Move settings persistence into the app target
+- [ ] Verify `Sources/Core/Push/*` stays in the app target and does NOT import from `SerenadaCore` internals
+
+#### Verify
+
+- [ ] App builds with `xcodegen generate && xcodebuild`
+- [ ] App runs and behaves identically to before the refactor
+- [ ] Run existing test suite — all tests pass
+- [ ] Grep `SerenadaCore` sources for any host-app references (push, saved rooms, settings) — zero results
+- [ ] Verify `SerenadaCore` has no UIKit/SwiftUI imports
+
+### Phase 2: Extract Core — Web
+
+**Why web second**: Proves the API shape works framework-agnostically. Heaviest refactor (React → vanilla TS).
+
+#### Create headless session engine
+
+- [ ] Create `packages/core/src/SerenadaSession.ts` class
+- [ ] Extract signaling transport logic from `SignalingContext.tsx` into `packages/core/src/signaling/` as vanilla TS classes
+- [ ] Extract WS transport from `contexts/signaling/transports/` → `packages/core/src/signaling/transports/`
+- [ ] Extract SSE transport → `packages/core/src/signaling/transports/`
+- [ ] Extract WebRTC peer connection logic from `WebRTCContext.tsx` into `packages/core/src/media/` as vanilla TS class
+- [ ] Extract reconnection and resilience logic from `constants/webrtcResilience.ts` → `packages/core/src/media/`
+- [ ] Extract `localVideoRecovery.ts` → `packages/core/src/media/`
+- [ ] Move `layout/computeLayout.ts` → `packages/core/src/layout/`
+- [ ] Move `utils/roomApi.ts` → `packages/core/src/api/` (TURN + room creation)
+- [ ] Implement `SerenadaSession` with: `subscribe(callback)`, `join()`, `leave()`, `end()`, `toggleAudio()`, `toggleVideo()`, `flipCamera()`, media stream getters
+- [ ] Implement `createSerenadaCore()` factory with `SerenadaConfig`
+- [ ] Implement `createRoom()` convenience method
+- [ ] Implement `onPermissionsRequired` callback on core config
+- [ ] Create `SerenadaPermissions.request()` utility — wraps `navigator.mediaDevices.getUserMedia`
+- [ ] Implement permission check in `join()` — detect missing camera/mic, invoke callback if set, otherwise call `SerenadaPermissions.request()` as fallback
+- [ ] Export public types: `CallState`, `Participant`, `CallPhase`, `CallError`, `SerenadaPermissions`
+- [ ] Build `@serenada/core` — should compile
+- [ ] Verify zero React/ReactDOM imports in `@serenada/core`
+
+#### Create React bindings
+
+- [ ] Create `packages/react-ui/src/hooks/useSerenadaSession.ts` — wraps `SerenadaSession` for React state
+- [ ] Create `packages/react-ui/src/hooks/useCallState.ts` — subscribes to `CallState` changes
+- [ ] Verify hooks re-render correctly on state changes
+
+#### Rewire web host app
+
+- [ ] Update `CallRoom.tsx` to use `useSerenadaSession()` + `useCallState()` instead of raw contexts
+- [ ] Keep push subscription, saved rooms, recent calls, room creation UX in the host app
+- [ ] Update `SignalingContext.tsx` and `WebRTCContext.tsx` to be thin wrappers around `@serenada/core` (or remove if fully replaced)
+
+#### Verify
+
+- [ ] Run `npm run build` — all packages compile
+- [ ] Run `npm run dev` — app works identically
+- [ ] Run `npm run test` — all Vitest tests pass
+- [ ] Run `npm run lint` — no new lint errors
+- [ ] Verify `packages/core/` has zero `react` or `react-dom` imports
+
+### Phase 3: Extract Core — Android
+
+#### Move files into :serenada-core
+
+- [ ] Move `call/WebRtcEngine.kt` → `:serenada-core` (mark `internal`)
+- [ ] Move `call/SignalingClient.kt` → `:serenada-core` (mark `internal`)
+- [ ] Move `call/CompositeCameraCapturer.kt` → `:serenada-core` (mark `internal`)
+- [ ] Move `call/PeerConnectionSlot.kt` → `:serenada-core` (mark `internal`)
+- [ ] Move `network/ApiClient.kt` → `:serenada-core` (mark `internal`, keep TURN + room creation)
+- [ ] Move `layout/ComputeLayout.kt` → `:serenada-core` (mark `public`)
+- [ ] Move signaling-related models → `:serenada-core` (mark `public` where needed)
+- [ ] Fix all import paths
+- [ ] Build — should compile
+
+#### Split CallManager.kt
+
+- [ ] Create `SerenadaSession.kt` in `:serenada-core` as a public class
+- [ ] Define `CallState` data class with all fields
+- [ ] Expose `StateFlow<CallState>` for observation
+- [ ] Move signaling, WebRTC orchestration, media control, and reconnection logic from `CallManager` into internal classes
+- [ ] Expose public methods: `leave()`, `end()`, `toggleAudio()`, `toggleVideo()`, `flipCamera()`, `setCameraMode()`, `startScreenShare()`, `stopScreenShare()`
+- [ ] Expose renderer attachment: `attachLocalRenderer()`, `attachRemoteRenderer()`
+- [ ] Strip host-app concerns:
+  - [ ] Remove saved rooms logic → move to `:app`
+  - [ ] Remove recent calls logic → move to `:app`
+  - [ ] Remove settings persistence → move to `:app`
+  - [ ] Remove push subscription sync → move to `:app`
+  - [ ] Remove room-status watching → move to `:app`
+  - [ ] Remove snapshot upload → move to `:app`
+- [ ] Build — should compile
+
+#### Create SerenadaCore entry point
+
+- [ ] Create `SerenadaCore.kt` with `SerenadaConfig` constructor
+- [ ] Implement `fun join(url: String): SerenadaSession`
+- [ ] Implement `fun join(roomId: String): SerenadaSession`
+- [ ] Implement `fun createRoom(callback: (CreateRoomResult) -> Unit)`
+- [ ] Define `SerenadaCoreDelegate` interface:
+  - [ ] `onPermissionsRequired` callback
+  - [ ] `onSessionStateChanged` callback
+  - [ ] `onSessionEnded` callback
+- [ ] Create `SerenadaPermissions` utility in core:
+  - [ ] Implement `request(activity, permissions, callback)` — triggers OS prompts for camera/mic
+- [ ] Implement permission check in `join()` — detect missing camera/mic, invoke delegate if set, otherwise call `SerenadaPermissions.request()` as fallback
+- [ ] Build — should compile
+
+#### Rewire Android host app
+
+- [ ] Update `:app` to import from `:serenada-core`
+- [ ] Replace direct `CallManager` usage with `SerenadaCore` / `SerenadaSession`
+- [ ] Wire foreground service to session state:
+  ```kotlin
+  session.state.collect { state ->
+      when (state.phase) {
+          CallPhase.InCall -> startForegroundService()
+          CallPhase.Idle -> stopForegroundService()
+          else -> {}
+      }
+  }
+  ```
+- [ ] Move push subscription logic into `:app`
+- [ ] Move saved rooms / recent calls into `:app`
+- [ ] Move settings persistence into `:app`
+
+#### Verify
+
+- [ ] Run `./gradlew assembleDebug` — compiles
+- [ ] Install and run on device — app works identically
+- [ ] Run `./gradlew test` — all tests pass
+- [ ] Grep `:serenada-core` sources for host-app references — zero results
+
+### Phase 4: Build Call-UI Libraries
+
+With core extracted and stable on all platforms, build the call-ui layer.
+
+#### iOS — SerenadaCallUI
+
+- [ ] Move `Sources/UI/Screens/CallScreen.swift` → `SerenadaCallUI/Sources/`
+- [ ] Move `Sources/UI/Components/WebRTCVideoView.swift` → `SerenadaCallUI/Sources/`
+- [ ] Move other call-related UI components → `SerenadaCallUI/Sources/`
+- [ ] Create `SerenadaCallFlow.swift` SwiftUI view:
+  - [ ] Accept `url: URL` or `session: SerenadaSession`
+  - [ ] Accept `config: SerenadaCallFlowConfig` (feature toggles)
+  - [ ] Accept `strings: [SerenadaString: String]` (optional overrides)
+  - [ ] Accept `onDismiss` callback
+  - [ ] Implement state-driven flow: joining → waiting → in-call → error → ended
+- [ ] Define `SerenadaCallFlowConfig`:
+  - [ ] `screenSharingEnabled: Bool` (default `true`)
+  - [ ] `inviteControlsEnabled: Bool` (default `true`)
+  - [ ] `debugOverlayEnabled: Bool` (default `false`)
+- [ ] Define `SerenadaString` enum with all user-facing string keys
+- [ ] Bundle default English strings
+- [ ] Implement `.serenadaTheme()` view modifier
+- [ ] Implement feature toggle logic — hide controls when disabled
+- [ ] Build — should compile
+
+#### Android — serenada-call-ui
+
+- [ ] Move `ui/CallScreen.kt` → `:serenada-call-ui`
+- [ ] Move `ui/Theme.kt` → `:serenada-call-ui`
+- [ ] Break `CallScreen.kt` into sub-composables: `ParticipantGrid`, `ControlBar`, `StatusOverlay`
+- [ ] Create `SerenadaCallFlow` composable:
+  - [ ] Accept `url: String` or `session: SerenadaSession`
+  - [ ] Accept `config: SerenadaCallFlowConfig` (feature toggles)
+  - [ ] Accept `strings: Map<SerenadaString, String>` (optional overrides)
+  - [ ] Accept `onDismiss` callback
+  - [ ] Implement state-driven flow
+- [ ] Define `SerenadaCallFlowConfig` data class with same fields as iOS
+- [ ] Define `SerenadaString` enum
+- [ ] Bundle default English string resources
+- [ ] Implement theme customization API
+- [ ] Implement feature toggle logic — hide controls when disabled
+- [ ] Move English-only i18n strings from `:app` into `:serenada-call-ui`
+- [ ] Build — should compile
+
+#### Web — @serenada/react-ui
+
+- [ ] Extract call rendering from `CallRoom.tsx` into `packages/react-ui/src/`
+- [ ] Break into sub-components: `ParticipantGrid`, `ControlBar`, `StatusOverlay`, `DebugPanel`
+- [ ] Create `<SerenadaCallFlow>` React component:
+  - [ ] Accept `url` or `session` prop
+  - [ ] Accept `config` prop (feature toggles)
+  - [ ] Accept `strings` prop (optional overrides)
+  - [ ] Accept `onDismiss` callback
+  - [ ] Implement state-driven flow
+- [ ] Define `SerenadaCallFlowConfig` type with same fields
+- [ ] Define string key types
+- [ ] Bundle default English strings
+- [ ] Export `useSerenadaSession()` hook
+- [ ] Implement theme/config props
+- [ ] Implement feature toggle logic — hide controls when disabled
+- [ ] Extract English-only i18n strings; leave other locales in host app
+- [ ] Build — should compile
+
+#### Verify all platforms
+
+- [ ] iOS: Serenada app works identically using `SerenadaCallFlow`
+- [ ] Android: Serenada app works identically using `SerenadaCallFlow`
+- [ ] Web: Serenada app works identically using `<SerenadaCallFlow>`
+- [ ] Test feature toggles: set `screenSharingEnabled: false` — screen share button hidden
+- [ ] Test feature toggles: set `inviteControlsEnabled: false` — QR/invite buttons hidden
+- [ ] Test string overrides: provide a non-English string map — UI renders overridden strings
+- [ ] Test core-only integration (without call-ui) still works on at least one platform
+
+### Phase 5: Rewire Serenada Apps as Host Apps
+
+Final cleanup to prove the SDK boundary is real.
+
+- [ ] Serenada iOS app uses `SerenadaCallFlow` for all call presentation
+- [ ] Serenada Android app uses `SerenadaCallFlow` for all call presentation
+- [ ] Serenada web app uses `<SerenadaCallFlow>` for all call presentation
+- [ ] Serenada apps pass their own locale strings via the strings config (ru, es, fr)
+- [ ] Serenada apps set feature toggles as appropriate (all enabled for first-party)
+- [ ] No host-app concerns remain in any SDK module
+- [ ] No SDK modules reference host-app code
+- [ ] All push, persistence, room management, and settings remain in host apps
+- [ ] All tests pass on all platforms
+
+### Phase 6: Publish & Document
+
+- [ ] Package `SerenadaCore` for external distribution via SPM Git URL
+- [ ] Package `SerenadaCallUI` for external distribution via SPM Git URL
+- [ ] Package `app.serenada:core` for Maven Central or GitHub Packages
+- [ ] Package `app.serenada:call-ui` for Maven Central or GitHub Packages
+- [ ] Publish `@serenada/core` to npm registry
+- [ ] Publish `@serenada/react-ui` to npm registry
+- [ ] Write integration guide: iOS quick start
+- [ ] Write integration guide: Android quick start
+- [ ] Write integration guide: Web quick start
+- [ ] Document `SerenadaCallFlowConfig` feature toggles
+- [ ] Document string override mechanism with examples per platform
+- [ ] Document theming API per platform
+- [ ] Create sample iOS host app (bare-bones: receives URL, shows `SerenadaCallFlow`)
+- [ ] Create sample Android host app
+- [ ] Create sample Web host app
+- [ ] Generate API reference docs from source (Swift DocC / Dokka / TypeDoc)
+
+---
+
+## Anti-patterns to Avoid
+
+- Do not put push notifications in core
+- Do not put recent calls / saved rooms in core
+- Do not expose `CallManager` classes as-is as the public API
+- Do not make core persist global host settings from incoming URLs
+- Do not make call-ui depend on the full Serenada app shell
+- Do not make core depend on React (web) — keep it vanilla TypeScript
+- Do not use Activity / UIViewController as the call-ui entry point — use composable / view
+- Do not add i18n display strings to core — expose structured enums, let call-ui localize
+- Do not bundle non-English strings in call-ui — host app provides additional locales
+- Do not require host apps to subclass SDK types — use composition and delegates
+- Do not hard-code call-ui features — use feature toggles so host apps can hide what they don't need
+
+---
+
+## Minimal Integration Examples
+
+### iOS
+```swift
+import SerenadaCore
+import SerenadaCallUI
+
+let serenada = SerenadaCore(config: .init(serverHost: "serenada.app"))
+
+func handleURL(_ url: URL) {
+    presentFullScreen {
+        SerenadaCallFlow(url: url, onDismiss: { dismiss() })
+    }
+}
+
+// With feature toggles and localization
+func handleURLCustomized(_ url: URL) {
+    presentFullScreen {
+        SerenadaCallFlow(
+            url: url,
+            config: .init(screenSharingEnabled: false, inviteControlsEnabled: false),
+            strings: [.waitingForOther: "Ожидание..."],
+            onDismiss: { dismiss() }
+        )
+    }
+}
+
+// Create a room and join it
+func startNewCall() {
+    serenada.createRoom { result in
+        let shareURL = result.url  // send to the other party
+        presentFullScreen {
+            SerenadaCallFlow(session: result.session, onDismiss: { dismiss() })
+        }
+    }
+}
+```
+
+### Android
+```kotlin
+import app.serenada.core.SerenadaCore
+import app.serenada.callui.SerenadaCallFlow
+
+val serenada = SerenadaCore(config = SerenadaConfig(serverHost = "serenada.app"))
+
+fun handleDeepLink(uri: Uri) {
+    SerenadaCallFlow(url = uri.toString(), onDismiss = { navController.popBackStack() })
+}
+
+// With feature toggles
+fun handleDeepLinkCustomized(uri: Uri) {
+    SerenadaCallFlow(
+        url = uri.toString(),
+        config = SerenadaCallFlowConfig(
+            screenSharingEnabled = false,
+            inviteControlsEnabled = false
+        ),
+        onDismiss = { navController.popBackStack() }
+    )
+}
+```
+
+### Web
+```tsx
+import { createSerenadaCore } from '@serenada/core'
+import { SerenadaCallFlow } from '@serenada/react-ui'
+
+const serenada = createSerenadaCore({ serverHost: 'serenada.app' })
+
+function CallPage() {
+    const { roomId } = useParams()
+    return (
+        <SerenadaCallFlow
+            url={`https://serenada.app/call/${roomId}`}
+            onDismiss={() => navigate('/')}
+        />
+    )
+}
+
+// With feature toggles and localization
+function CallPageCustomized() {
+    const { roomId } = useParams()
+    return (
+        <SerenadaCallFlow
+            url={`https://serenada.app/call/${roomId}`}
+            config={{ screenSharingEnabled: false, inviteControlsEnabled: false }}
+            strings={{ waitingForOther: 'En attente...' }}
+            onDismiss={() => navigate('/')}
+        />
+    )
+}
+```
+
+---
+
+## Success Criteria
+
+The SDK extraction is complete when:
+
+1. A new iOS/Android/Web app can join a Serenada call with < 10 lines of integration code
+2. The Serenada apps work identically to today, consuming their own SDK
+3. Core has zero references to push, persistence, room management, or settings
+4. Core (web) has zero React imports
+5. call-ui works with any host app navigation stack (no forced Activity/ViewController)
+6. A sample host app exists per platform demonstrating the minimal integration
