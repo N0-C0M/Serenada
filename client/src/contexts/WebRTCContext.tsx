@@ -10,6 +10,11 @@ import {
     ICE_CANDIDATE_BUFFER_MAX,
     TURN_FETCH_TIMEOUT_MS,
 } from '../constants/webrtcResilience';
+import {
+    LOCAL_VIDEO_HEARTBEAT_INTERVAL_MS,
+    shouldForceLocalVideoRefresh,
+    shouldRecoverLocalVideo,
+} from './localVideoRecovery';
 
 // Default STUN config for non-blocking ICE bootstrap
 const DEFAULT_RTC_CONFIG: RTCConfiguration = {
@@ -76,6 +81,9 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const isConnectedRef = useRef(isConnected);
     const connectionStatusRef = useRef<ConnectionStatus>('connected');
     const retryingTimerRef = useRef<number | null>(null);
+    const localVideoHeartbeatAtRef = useRef(Date.now());
+    const localVideoHiddenAtRef = useRef<number | null>(typeof document !== 'undefined' && document.hidden ? Date.now() : null);
+    const cameraRecoveryInFlightRef = useRef(false);
 
     // RTC Config State — init with default STUN immediately (non-blocking ICE bootstrap)
     const [rtcConfig, setRtcConfig] = useState<RTCConfiguration>(DEFAULT_RTC_CONFIG);
@@ -850,7 +858,7 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }, []);
 
     // Helper: replace video track across all peer connections
-    const replaceVideoTrackOnAllPeers = async (newTrack: MediaStreamTrack | null) => {
+    const replaceVideoTrackOnAllPeers = useCallback(async (newTrack: MediaStreamTrack | null) => {
         for (const [, peer] of peersRef.current) {
             const sender = peer.pc.getSenders().find(s => s.track?.kind === 'video');
             if (sender) {
@@ -859,7 +867,139 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                 }
             }
         }
-    };
+    }, []);
+
+    const acquireCameraTrack = useCallback(async (
+        targetFacingMode: 'user' | 'environment',
+        enabled: boolean
+    ): Promise<MediaStreamTrack> => {
+        let cameraStream: MediaStream;
+        try {
+            cameraStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: targetFacingMode },
+                audio: false
+            });
+        } catch {
+            cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        }
+
+        const cameraTrack = cameraStream.getVideoTracks()[0];
+        if (!cameraTrack) {
+            cameraStream.getTracks().forEach(track => track.stop());
+            throw new Error('No camera track returned');
+        }
+
+        cameraTrack.enabled = enabled;
+        return cameraTrack;
+    }, []);
+
+    const swapLocalVideoTrack = useCallback(async (
+        nextTrack: MediaStreamTrack | null,
+        previousTrack: MediaStreamTrack | null
+    ) => {
+        const currentStream = localStreamRef.current;
+        if (!currentStream) {
+            if (previousTrack && previousTrack !== nextTrack) {
+                previousTrack.stop();
+            }
+            return;
+        }
+
+        await replaceVideoTrackOnAllPeers(nextTrack);
+
+        const nextStream = nextTrack
+            ? new MediaStream([nextTrack, ...currentStream.getAudioTracks()])
+            : new MediaStream([...currentStream.getAudioTracks()]);
+        setLocalStream(nextStream);
+
+        if (previousTrack && previousTrack !== nextTrack) {
+            previousTrack.stop();
+        }
+    }, [replaceVideoTrackOnAllPeers]);
+
+    const refreshLocalVideoTrack = useCallback(async (reason: string, forceRefresh = false): Promise<boolean> => {
+        const currentStream = localStreamRef.current;
+        const currentVideoTrack = currentStream?.getVideoTracks()[0] ?? null;
+        const shouldRecover = shouldRecoverLocalVideo({
+            hasVideoTrack: !!currentVideoTrack,
+            isScreenSharing: isScreenSharingRef.current,
+            videoTrackReadyState: currentVideoTrack?.readyState ?? null,
+            videoTrackMuted: currentVideoTrack?.muted ?? false,
+            forceRefresh
+        });
+
+        if (!shouldRecover || cameraRecoveryInFlightRef.current || requestingMediaRef.current) {
+            return false;
+        }
+
+        cameraRecoveryInFlightRef.current = true;
+        try {
+            const nextTrack = await acquireCameraTrack(
+                facingModeRef.current,
+                currentVideoTrack?.enabled ?? true
+            );
+            await swapLocalVideoTrack(nextTrack, currentVideoTrack);
+            console.info(`[WebRTC] Refreshed local video track (${reason})`);
+            return true;
+        } catch (err) {
+            console.error(`[WebRTC] Failed to refresh local video track (${reason})`, err);
+            return false;
+        } finally {
+            cameraRecoveryInFlightRef.current = false;
+        }
+    }, [acquireCameraTrack, swapLocalVideoTrack]);
+
+    // Refresh the camera track after long suspend/resume gaps so the local preview
+    // and outgoing sender recover without a full page reload.
+    useEffect(() => {
+        const consumeHiddenDuration = (): number | null => {
+            const now = Date.now();
+            const hiddenDurationMs = localVideoHiddenAtRef.current ? now - localVideoHiddenAtRef.current : null;
+            localVideoHiddenAtRef.current = null;
+            localVideoHeartbeatAtRef.current = now;
+            return hiddenDurationMs;
+        };
+
+        const handleVisibilityChange = () => {
+            if (document.hidden) {
+                const now = Date.now();
+                localVideoHiddenAtRef.current = now;
+                localVideoHeartbeatAtRef.current = now;
+                return;
+            }
+
+            const hiddenDurationMs = consumeHiddenDuration();
+            const forceRefresh = shouldForceLocalVideoRefresh({ hiddenDurationMs });
+            void refreshLocalVideoTrack('visibility-resume', forceRefresh);
+        };
+
+        const handlePageShow = (event: PageTransitionEvent) => {
+            const hiddenDurationMs = consumeHiddenDuration();
+            const forceRefresh = event.persisted || shouldForceLocalVideoRefresh({ hiddenDurationMs });
+            void refreshLocalVideoTrack('pageshow-resume', forceRefresh);
+        };
+
+        const intervalId = window.setInterval(() => {
+            const now = Date.now();
+            const sleepGapMs = now - localVideoHeartbeatAtRef.current;
+            localVideoHeartbeatAtRef.current = now;
+
+            if (document.hidden || !shouldForceLocalVideoRefresh({ sleepGapMs })) {
+                return;
+            }
+
+            void refreshLocalVideoTrack('sleep-resume', true);
+        }, LOCAL_VIDEO_HEARTBEAT_INTERVAL_MS);
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('pageshow', handlePageShow);
+
+        return () => {
+            window.clearInterval(intervalId);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            window.removeEventListener('pageshow', handlePageShow);
+        };
+    }, [refreshLocalVideoTrack]);
 
     const stopScreenShare = useCallback(async () => {
         if (!isScreenSharingRef.current) return;
@@ -876,29 +1016,18 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         const wasVideoEnabled = previousVideoTrack ? previousVideoTrack.enabled : true;
 
         try {
-            const cameraStream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: facingModeRef.current }, audio: false
-            });
-            const cameraTrack = cameraStream.getVideoTracks()[0];
-            if (!cameraTrack) throw new Error('No camera track returned');
-            cameraTrack.enabled = wasVideoEnabled;
-
-            await replaceVideoTrackOnAllPeers(cameraTrack);
-
-            setLocalStream(new MediaStream([cameraTrack, ...currentStream.getAudioTracks()]));
-            if (previousVideoTrack) previousVideoTrack.stop();
+            const cameraTrack = await acquireCameraTrack(facingModeRef.current, wasVideoEnabled);
+            await swapLocalVideoTrack(cameraTrack, previousVideoTrack);
             setIsScreenSharing(false);
             sendMessage('content_state', { active: false });
         } catch (err) {
             console.error('[WebRTC] Failed to stop screen share and restore camera', err);
-            await replaceVideoTrackOnAllPeers(null);
-            if (previousVideoTrack) previousVideoTrack.stop();
-            setLocalStream(new MediaStream([...currentStream.getAudioTracks()]));
+            await swapLocalVideoTrack(null, previousVideoTrack);
             setIsScreenSharing(false);
             sendMessage('content_state', { active: false });
             showToast('error', t('toast_camera_error'));
         }
-    }, [sendMessage, showToast, t]);
+    }, [acquireCameraTrack, sendMessage, showToast, swapLocalVideoTrack, t]);
 
     const startScreenShare = useCallback(async () => {
         if (isScreenSharingRef.current || !canScreenShare) return;
@@ -920,21 +1049,18 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                 try { displayTrack.contentHint = 'detail'; } catch { /* ignore */ }
             }
 
-            await replaceVideoTrackOnAllPeers(displayTrack);
-
             if (screenShareTrackRef.current) screenShareTrackRef.current.onended = null;
             screenShareTrackRef.current = displayTrack;
             displayTrack.onended = () => { void stopScreenShare(); };
 
-            setLocalStream(new MediaStream([displayTrack, ...currentStream.getAudioTracks()]));
-            if (previousVideoTrack) previousVideoTrack.stop();
+            await swapLocalVideoTrack(displayTrack, previousVideoTrack);
             setIsScreenSharing(true);
             sendMessage('content_state', { active: true, contentType: 'screenShare' });
         } catch (err) {
             console.error('[WebRTC] Failed to start screen share', err);
             showToast('error', t('toast_screen_share_error'));
         }
-    }, [canScreenShare, sendMessage, showToast, stopScreenShare, t]);
+    }, [canScreenShare, sendMessage, showToast, stopScreenShare, swapLocalVideoTrack, t]);
 
     const flipCamera = async () => {
         if (isScreenSharingRef.current) return;
@@ -947,16 +1073,8 @@ export const WebRTCProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
         try {
             const oldVideoTrack = localStream.getVideoTracks()[0];
-            if (oldVideoTrack) oldVideoTrack.stop();
-
-            const newStream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: newMode }, audio: false
-            });
-            const newVideoTrack = newStream.getVideoTracks()[0];
-
-            await replaceVideoTrackOnAllPeers(newVideoTrack);
-
-            setLocalStream(new MediaStream([newVideoTrack, ...localStream.getAudioTracks()]));
+            const newVideoTrack = await acquireCameraTrack(newMode, oldVideoTrack?.enabled ?? true);
+            await swapLocalVideoTrack(newVideoTrack, oldVideoTrack);
         } catch (err) {
             console.error('[WebRTC] Failed to flip camera', err);
             showToast('error', t('toast_flip_camera_error'));
