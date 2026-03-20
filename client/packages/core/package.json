@@ -1,0 +1,41 @@
+{
+  "name": "@serenada/core",
+  "version": "0.1.0",
+  "description": "Headless WebRTC call engine for 1:1 video calls — vanilla TypeScript, no React dependency",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "build:publish": "tsc -p tsconfig.build.json",
+    "lint": "eslint src/",
+    "test": "vitest run test",
+    "prepublishOnly": "npm run build:publish"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AleGavrilov/serenada-sdk.git",
+    "directory": "client/packages/core"
+  },
+  "keywords": [
+    "webrtc",
+    "video-call",
+    "signaling",
+    "serenada"
+  ],
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  }
+}
