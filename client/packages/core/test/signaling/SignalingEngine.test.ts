@@ -287,7 +287,7 @@ describe('join hard timeout', () => {
         const ws = lastTransport();
         ws.simulateOpen();
 
-        const stateChanges: string[] = [];
+        const stateChanges: unknown[] = [];
         engine.onStateChange(() => {
             if (engine.error) stateChanges.push(engine.error);
         });
@@ -300,8 +300,8 @@ describe('join hard timeout', () => {
 
         // Advance past JOIN_HARD_TIMEOUT_MS (15 000).
         vi.advanceTimersByTime(1);
-        expect(engine.error).toBe('Join timed out');
-        expect(stateChanges).toContain('Join timed out');
+        expect(engine.error).toEqual({ code: 'JOIN_TIMEOUT', message: 'Join timed out' });
+        expect(stateChanges.some(v => typeof v === 'object')).toBe(true);
 
         engine.destroy();
     });

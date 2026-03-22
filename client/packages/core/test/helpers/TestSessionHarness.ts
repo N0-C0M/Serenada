@@ -78,8 +78,8 @@ export class TestSessionHarness {
         this.signaling.emit({ roomState });
     }
 
-    simulateError(message: string): void {
-        this.signaling.emit({ error: message });
+    simulateError(message: string, code = 'UNKNOWN'): void {
+        this.signaling.emit({ error: { code, message } });
     }
 
     simulateDisconnect(): void {

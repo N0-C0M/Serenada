@@ -18,7 +18,7 @@ export class FakeSignalingEngine {
     roomState: RoomState | null = null;
     turnToken: string | null = null;
     turnTokenTTLMs: number | null = null;
-    error: string | null = null;
+    error: { code: string; message: string } | null = null;
     roomStatuses: RoomStatuses = {};
 
     // --- Call tracking ---

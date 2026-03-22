@@ -291,7 +291,7 @@ describe('SerenadaSession', () => {
 
             expect(harness.state.phase).toBe('error');
             expect(harness.state.error).toEqual({
-                code: 'signaling_error',
+                code: 'unknown',
                 message: 'Connection refused',
             });
         });
