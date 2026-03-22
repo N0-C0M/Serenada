@@ -34,6 +34,10 @@ TURN_TOKEN_SECRET=$(openssl rand -hex 32)
 export DATA_DIR
 DATA_DIR="$(mktemp -d)"
 
+# Disable push services (server reads .env which may have FCM config pointing to missing files)
+export FCM_SERVICE_ACCOUNT_JSON=""
+export FCM_SERVICE_ACCOUNT_FILE=""
+
 # ── Install test dependencies ───────────────────────────────────────────────
 echo "Installing test dependencies..."
 (cd "$SCRIPT_DIR" && npm install --silent 2>&1 | tail -1)
