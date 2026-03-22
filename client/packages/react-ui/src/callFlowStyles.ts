@@ -6,6 +6,7 @@ const CALL_FLOW_CSS = `
 }
 
 .serenada-callflow {
+  --serenada-accent: #3b82f6;
   position: fixed;
   inset: 0;
   overflow: hidden;
@@ -311,8 +312,8 @@ const CALL_FLOW_CSS = `
 
 .serenada-callflow .btn-zoom:hover {
   transform: scale(1.05);
-  background: rgba(47, 129, 247, 0.2);
-  border-color: #2f81f7;
+  border-color: var(--serenada-accent);
+  color: var(--serenada-accent);
 }
 
 .serenada-callflow .btn-zoom:active {
@@ -322,6 +323,18 @@ const CALL_FLOW_CSS = `
 .serenada-callflow.controls-hidden .btn-zoom {
   opacity: 0;
   pointer-events: none;
+}
+
+.serenada-callflow .debug-toggle-zone {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 72px;
+  height: 72px;
+  z-index: 41;
+  pointer-events: auto;
+  touch-action: manipulation;
+  user-select: none;
 }
 
 .serenada-callflow .waiting-message {
@@ -362,8 +375,8 @@ const CALL_FLOW_CSS = `
 }
 
 .serenada-callflow .btn-small:hover {
-  border-color: #fff;
-  color: #fff;
+  border-color: var(--serenada-accent);
+  color: var(--serenada-accent);
 }
 
 .serenada-callflow .waiting-actions {

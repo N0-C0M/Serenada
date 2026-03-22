@@ -16,6 +16,10 @@ packages:
   Firebase:
     url: https://github.com/firebase/firebase-ios-sdk.git
     from: 11.11.0
+  SerenadaCore:
+    path: SerenadaCore
+  SerenadaCallUI:
+    path: SerenadaCallUI
 targets:
   SerenadaiOS:
     type: application
@@ -54,6 +58,10 @@ targets:
         codeSign: true
       - package: Firebase
         product: FirebaseMessaging
+      - package: SerenadaCore
+        product: SerenadaCore
+      - package: SerenadaCallUI
+        product: SerenadaCallUI
       - target: SerenadaNotificationService
         embed: true
       - target: SerenadaBroadcast
@@ -69,7 +77,7 @@ targets:
     deploymentTarget: "16.0"
     sources:
       - path: NotificationService
-      - path: Sources/Core/Push/PushKeyStore.swift
+      - path: Shared
     info:
       path: NotificationService/Info.plist
       properties:
@@ -92,7 +100,7 @@ targets:
       - path: BroadcastUpload
         excludes:
           - Info.plist
-      - path: Shared
+      - path: SerenadaCore/Sources/BroadcastShared.swift
     info:
       path: BroadcastUpload/Info.plist
       properties:
@@ -114,6 +122,8 @@ targets:
     deploymentTarget: "16.0"
     sources:
       - path: Tests
+      - path: SerenadaCore/Tests/SerenadaCoreTests
+      - path: SerenadaCallUI/Tests/SerenadaCallUITests
     dependencies:
       - target: SerenadaiOS
     settings:

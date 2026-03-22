@@ -31,7 +31,14 @@ secrets/
 client-ios/Resources/GoogleService-Info.plist
 /.claude/worktrees
 /tools/smoke-test/artifacts
-/client-android/serenada-call-ui/build
-/client-android/serenada-core/build
+
+# ralphex progress logs
+.ralphex/progress/
+
+# Android build artifacts
+/client-android/serenada-core/build/
+/client-android/serenada-call-ui/build/
+/client-android/serenada-core/.gradle/
+/client-android/serenada-call-ui/.gradle/
 /client-ios/SerenadaCallUI/.build
 /client-ios/SerenadaCore/.build

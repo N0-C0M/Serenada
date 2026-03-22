@@ -1,6 +1,4 @@
 import java.util.Properties
-import java.io.File
-import java.security.MessageDigest
 
 plugins {
     id("com.android.application")
@@ -12,52 +10,6 @@ fun asBuildConfigString(value: String?): String {
         .replace("\\", "\\\\")
         .replace("\"", "\\\"")
     return "\"$escaped\""
-}
-
-fun readSha256FromFile(file: File): String? {
-    if (!file.exists()) {
-        return null
-    }
-    val raw = file.readText()
-        .lineSequence()
-        .map { it.trim() }
-        .firstOrNull { it.isNotEmpty() && !it.startsWith("#") }
-        ?: return null
-    return raw.split(Regex("\\s+")).firstOrNull()?.lowercase()
-}
-
-fun sha256Of(file: File): String {
-    val digest = MessageDigest.getInstance("SHA-256")
-    file.inputStream().use { input ->
-        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-        while (true) {
-            val read = input.read(buffer)
-            if (read <= 0) break
-            digest.update(buffer, 0, read)
-        }
-    }
-    return digest.digest().joinToString("") { "%02x".format(it) }
-}
-
-val webrtcProvider = (findProperty("webrtcProvider") as String?)?.trim()?.lowercase()
-    ?.takeIf { it == "stream" || it == "dafruits" || it == "webrtcsdk" || it == "local7559" }
-    ?: "local7559"
-val webrtcDependency = when (webrtcProvider) {
-    "dafruits" -> "com.dafruits:webrtc:123.0.0"
-    "webrtcsdk" -> "io.github.webrtc-sdk:android:137.7151.05"
-    "stream" -> "io.getstream:stream-webrtc-android:1.3.10"
-    else -> null
-}
-val localWebRtcAarPath = "libs/libwebrtc-7559_173-arm64.aar"
-val localWebRtcAarFile = file(localWebRtcAarPath)
-val localWebRtcAarSha256Path = "$localWebRtcAarPath.sha256"
-val localWebRtcAarSha256File = file(localWebRtcAarSha256Path)
-val expectedLocalWebRtcAarSha256 = readSha256FromFile(localWebRtcAarSha256File)
-if (webrtcProvider == "local7559" && !localWebRtcAarFile.exists()) {
-    throw GradleException("Missing local WebRTC AAR at app/$localWebRtcAarPath")
-}
-if (webrtcProvider == "local7559" && expectedLocalWebRtcAarSha256.isNullOrBlank()) {
-    throw GradleException("Missing local WebRTC SHA-256 file at app/$localWebRtcAarSha256Path")
 }
 
 val firebaseAppId = (findProperty("firebaseAppId") as String?)?.trim()
@@ -86,7 +38,6 @@ android {
         targetSdk = 34
         versionCode = 12
         versionName = "0.3.0"
-        buildConfigField("String", "WEBRTC_PROVIDER", "\"$webrtcProvider\"")
         buildConfigField("String", "FIREBASE_APP_ID", asBuildConfigString(firebaseAppId))
         buildConfigField("String", "FIREBASE_API_KEY", asBuildConfigString(firebaseApiKey))
         buildConfigField("String", "FIREBASE_PROJECT_ID", asBuildConfigString(firebaseProjectId))
@@ -158,27 +109,6 @@ val renameDebugApk = tasks.register("renameDebugApk") {
     }
 }
 
-val verifyLocalWebRtcAar = tasks.register("verifyLocalWebRtcAar") {
-    onlyIf { webrtcProvider == "local7559" }
-    doLast {
-        val expectedHash = expectedLocalWebRtcAarSha256
-            ?: throw GradleException("Missing expected SHA-256 for app/$localWebRtcAarPath")
-        val actualHash = sha256Of(localWebRtcAarFile)
-        if (actualHash != expectedHash) {
-            throw GradleException(
-                "Local WebRTC AAR checksum mismatch for app/$localWebRtcAarPath. " +
-                    "Expected $expectedHash but found $actualHash"
-            )
-        }
-    }
-}
-
-tasks.matching { it.name == "preBuild" }.configureEach {
-    if (webrtcProvider == "local7559") {
-        dependsOn(verifyLocalWebRtcAar)
-    }
-}
-
 val renameReleaseApk = tasks.register("renameReleaseApk") {
     doLast {
         val apk = layout.buildDirectory.file("outputs/apk/release/app-release.apk").get().asFile
@@ -198,6 +128,9 @@ tasks.matching { it.name == "assembleRelease" }.configureEach {
 }
 
 dependencies {
+    implementation(project(":serenada-core"))
+    implementation(project(":serenada-call-ui"))
+
     implementation(platform("androidx.compose:compose-bom:2024.10.00"))
     implementation(platform("com.google.firebase:firebase-bom:33.8.0"))
     implementation("androidx.activity:activity-compose:1.9.2")
@@ -209,11 +142,7 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    if (webrtcProvider == "local7559") {
-        implementation(files(localWebRtcAarFile))
-    } else {
-        implementation(webrtcDependency!!)
-    }
+    // WebRTC AAR is now provided transitively via :serenada-core
     implementation("com.google.firebase:firebase-messaging-ktx")
     implementation("com.google.zxing:core:3.5.3")
 

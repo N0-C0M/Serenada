@@ -28,7 +28,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
 import app.serenada.android.R
 import app.serenada.android.call.CallManager
-import app.serenada.android.call.CallPhase
+import app.serenada.android.i18n.buildSerenadaCallStrings
+import app.serenada.callui.SerenadaCallFlow
+import app.serenada.callui.SerenadaCallFlowConfig
+import app.serenada.core.call.CallPhase
 
 private enum class RootScreen {
     Join,
@@ -53,11 +56,11 @@ fun SerenadaAppRoot(
     val areSavedRoomsShownFirst by callManager.areSavedRoomsShownFirst
     val areRoomInviteNotificationsEnabled by callManager.areRoomInviteNotificationsEnabled
     val roomStatuses by callManager.roomStatuses
+    val activeSession by callManager.sessionState
     val context = LocalContext.current
     val showActiveCallScreen =
         uiState.phase == CallPhase.Waiting ||
-                uiState.phase == CallPhase.InCall ||
-                uiState.connectionState == "CONNECTED"
+                uiState.phase == CallPhase.InCall
 
     var hostInput by rememberSaveable { mutableStateOf(serverHost) }
     var roomInput by rememberSaveable { mutableStateOf("") }
@@ -331,57 +334,40 @@ fun SerenadaAppRoot(
                     )
                 }
                 RootScreen.Call -> {
-                    CallScreen(
-                        roomId = uiState.roomId.orEmpty(),
-                        uiState = uiState,
-                        serverHost = serverHost,
-                        eglContext = callManager.eglContext(),
-                        onToggleAudio = { callManager.toggleAudio() },
-                        onToggleVideo = { callManager.toggleVideo() },
-                        onFlipCamera = { callManager.flipCamera() },
-                        onToggleFlashlight = { callManager.toggleFlashlight() },
-                        onLocalPinchZoom = { scaleFactor -> callManager.adjustLocalCameraZoom(scaleFactor) },
-                        onEndCall = { callManager.leaveCall() },
-                        onInviteToRoom = {
-                            callManager.inviteToCurrentRoom { result ->
-                                result
-                                    .onSuccess {
-                                        android.widget.Toast.makeText(
-                                            context,
-                                            context.getString(R.string.call_invite_sent),
-                                            android.widget.Toast.LENGTH_SHORT
-                                        ).show()
-                                    }
-                                    .onFailure {
-                                        android.widget.Toast.makeText(
-                                            context,
-                                            context.getString(R.string.call_invite_failed),
-                                            android.widget.Toast.LENGTH_SHORT
-                                        ).show()
-                                    }
-                            }
-                        },
-                        onStartScreenShare = { intent -> callManager.startScreenShare(intent) },
-                        onStopScreenShare = { callManager.stopScreenShare() },
-                        attachLocalRenderer = { renderer, events ->
-                            callManager.attachLocalRenderer(renderer, events)
-                        },
-                        detachLocalRenderer = { callManager.detachLocalRenderer(it) },
-                        attachLocalSink = { callManager.attachLocalSink(it) },
-                        detachLocalSink = { callManager.detachLocalSink(it) },
-                        attachRemoteRenderer = { renderer, events ->
-                            callManager.attachRemoteRenderer(renderer, events)
-                        },
-                        detachRemoteRenderer = { callManager.detachRemoteRenderer(it) },
-                        attachRemoteSinkForCid = { cid, sink ->
-                            callManager.attachRemoteSinkForCid(cid, sink)
-                        },
-                        detachRemoteSinkForCid = { cid, sink ->
-                            callManager.detachRemoteSinkForCid(cid, sink)
-                        },
-                        attachRemoteSink = { callManager.attachRemoteSink(it) },
-                        detachRemoteSink = { callManager.detachRemoteSink(it) }
-                    )
+                    activeSession?.let { session ->
+                        SerenadaCallFlow(
+                            session = session,
+                            initialRemoteVideoFitCover = callManager.isRemoteVideoFitCover,
+                            config = SerenadaCallFlowConfig(
+                                screenSharingEnabled = true,
+                                inviteControlsEnabled = true,
+                                debugOverlayEnabled = true,
+                            ),
+                            strings = buildSerenadaCallStrings(context),
+                            onInviteToRoom = {
+                                callManager.inviteToCurrentRoom { result ->
+                                    result
+                                        .onSuccess {
+                                            android.widget.Toast.makeText(
+                                                context,
+                                                context.getString(R.string.call_invite_sent),
+                                                android.widget.Toast.LENGTH_SHORT,
+                                            ).show()
+                                        }
+                                        .onFailure {
+                                            android.widget.Toast.makeText(
+                                                context,
+                                                context.getString(R.string.call_invite_failed),
+                                                android.widget.Toast.LENGTH_SHORT,
+                                            ).show()
+                                        }
+                                }
+                            },
+                            onRemoteVideoFitChanged = { isCover ->
+                                callManager.updateRemoteVideoFitCover(isCover)
+                            },
+                        )
+                    }
                 }
                 RootScreen.Error -> {
                     ErrorScreen(

@@ -1,5 +1,6 @@
 import type { TransportKind } from './signaling/transports/types.js';
 import type { SignalingMessage } from './signaling/types.js';
+import type { RoomStatus, RoomStatuses } from './signaling/roomStatuses.js';
 
 export type CallPhase = 'idle' | 'awaitingPermissions' | 'joining' | 'waiting' | 'inCall' | 'ending' | 'error';
 
@@ -48,6 +49,7 @@ export interface SerenadaConfig {
     defaultVideoEnabled?: boolean;
     transports?: TransportKind[];
     turnsOnly?: boolean;
+    logger?: SerenadaLogger;
 }
 
 export interface CreateRoomResult {
@@ -109,11 +111,24 @@ export interface CallStats {
     updatedAtMs: number;
 }
 
+export type RoomOccupancy = RoomStatus;
+
+export interface RoomWatcherState {
+    isConnected: boolean;
+    activeTransport: TransportKind | null;
+    roomStatuses: RoomStatuses;
+}
+
 export type DiagnosticCheckResult =
     | { status: 'available' }
     | { status: 'unavailable'; reason: string }
     | { status: 'notAuthorized' }
     | { status: 'skipped'; reason: string };
+
+export type CheckOutcome =
+    | { status: 'notRun' }
+    | { status: 'passed'; latencyMs: number }
+    | { status: 'failed'; error: string };
 
 export interface DiagnosticsReport {
     camera: DiagnosticCheckResult;
@@ -123,4 +138,25 @@ export interface DiagnosticsReport {
     signaling: DiagnosticCheckResult & { transport?: string };
     turn: DiagnosticCheckResult & { latencyMs?: number };
     devices: MediaDeviceInfo[];
+}
+
+export interface ConnectivityReport {
+    roomApi: CheckOutcome;
+    webSocket: CheckOutcome;
+    sse: CheckOutcome;
+    diagnosticToken: CheckOutcome;
+    turnCredentials: CheckOutcome;
+}
+
+export interface IceProbeReport {
+    stunPassed: boolean;
+    turnPassed: boolean;
+    logs: string[];
+    iceServersSummary?: string;
+}
+
+export type SerenadaLogLevel = 'debug' | 'info' | 'warning' | 'error';
+
+export interface SerenadaLogger {
+    log(level: SerenadaLogLevel, tag: string, message: string): void;
 }

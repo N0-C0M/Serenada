@@ -1,3 +1,5 @@
+import SerenadaCallUI
+import SerenadaCore
 import SwiftUI
 
 private enum RootScreen {
@@ -6,8 +8,20 @@ private enum RootScreen {
     case error
 }
 
-func shouldShowActiveCallScreen(for uiState: CallUiState) -> Bool {
-    uiState.phase == .waiting || uiState.phase == .inCall
+func shouldShowActiveCallScreen(
+    sessionPhase: SerenadaCallPhase?,
+    fallbackUiState: CallUiState
+) -> Bool {
+    if let sessionPhase {
+        switch sessionPhase {
+        case .awaitingPermissions, .waiting, .inCall, .ending:
+            return true
+        case .idle, .joining, .error:
+            return false
+        }
+    }
+
+    return fallbackUiState.phase == .waiting || fallbackUiState.phase == .inCall
 }
 
 struct RootView: View {
@@ -24,7 +38,12 @@ struct RootView: View {
 
     var body: some View {
         let uiState = callManager.uiState
-        let showActiveCallScreen = shouldShowActiveCallScreen(for: uiState)
+        let activeSession = callManager.activeSession
+        let sessionPhase = activeSession?.state.phase
+        let showActiveCallScreen = shouldShowActiveCallScreen(
+            sessionPhase: sessionPhase,
+            fallbackUiState: uiState
+        )
 
         let currentScreen: RootScreen = {
             if showActiveCallScreen { return .call }
@@ -76,23 +95,22 @@ struct RootView: View {
                 )
 
             case .call:
-                if let roomId = uiState.roomId {
-                    CallScreen(
-                        roomId: roomId,
-                        uiState: uiState,
-                        serverHost: callManager.serverHost,
-                        onToggleAudio: { callManager.toggleAudio() },
-                        onToggleVideo: { callManager.toggleVideo() },
-                        onFlipCamera: { callManager.flipCamera() },
-                        onToggleScreenShare: { callManager.toggleScreenShare() },
-                        onAdjustCameraZoom: { delta in
-                            callManager.adjustCameraZoom(scaleDelta: delta)
-                        },
-                        onResetCameraZoom: { callManager.resetCameraZoom() },
-                        onToggleFlashlight: { _ = callManager.toggleFlashlight() },
-                        onEndCall: { callManager.endCall() },
+                if let session = activeSession {
+                    SerenadaCallFlow(
+                        session: session,
+                        roomName: callManager.savedRooms.first(where: { $0.roomId == session.roomId })?.name,
+                        initialRemoteVideoFitCover: SettingsStore().isRemoteVideoFitCover,
+                        config: SerenadaCallFlowConfig(
+                            screenSharingEnabled: true,
+                            inviteControlsEnabled: true,
+                            debugOverlayEnabled: true
+                        ),
+                        strings: L10n.serenadaCallStrings,
                         onInviteToRoom: { await callManager.inviteToCurrentRoom() },
-                        callManager: callManager
+                        onRemoteVideoFitChanged: { value in
+                            SettingsStore().isRemoteVideoFitCover = value
+                        },
+                        onDismiss: { callManager.dismissActiveCall() }
                     )
                 }
 
