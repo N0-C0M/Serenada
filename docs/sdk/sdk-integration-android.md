@@ -326,4 +326,4 @@ val config = SerenadaConfig(
 ## Next Steps
 
 - [Feature Toggles, String Overrides & Theming](sdk-customization.md)
-- [API Reference](#) — generate with `./gradlew dokkaHtml`
+- [API Reference](https://agatx.github.io/serenada/android/core/) — also available for [serenada-call-ui](https://agatx.github.io/serenada/android/call-ui/)

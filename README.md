@@ -206,6 +206,7 @@ Android enforces main-thread access on all public SDK entrypoints with fail-fast
 
 ## Documentation
 
+- [SDK API Reference](https://agatx.github.io/serenada/) – Generated API docs for all platforms (Web, Android, iOS)
 - [Deployment Guide](DEPLOY.md) – Self-hosting instructions
 - [Protocol Specification](docs/serenada_protocol_v1.md) – Signaling protocol (WebSocket + SSE)
 - [Push Notifications](docs/push-notifications.md) – Encrypted snapshot notifications

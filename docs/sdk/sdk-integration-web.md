@@ -297,4 +297,4 @@ const serenada = createSerenadaCore({
 ## Next Steps
 
 - [Feature Toggles, String Overrides & Theming](sdk-customization.md)
-- [API Reference Generation](sdk-api-reference.md)
+- [API Reference](https://agatx.github.io/serenada/web/core/) — also available for [@serenada/react-ui](https://agatx.github.io/serenada/web/react-ui/)

@@ -1,4 +1,8 @@
-# Serenada SDK — API Reference Generation
+# Serenada SDK — API Reference
+
+Published API docs are available at **https://agatx.github.io/serenada/** and are automatically regenerated whenever the SDK version changes (via GitHub Actions).
+
+To generate docs locally:
 
 ## iOS (Swift DocC)
 
