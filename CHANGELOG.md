@@ -4,6 +4,24 @@ All notable changes to the Serenada SDK are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.2.0] — 2026-03-23
+
+### Added
+- GitHub Actions workflow to generate and publish SDK API docs to GitHub Pages
+- TSDoc, KDoc, and Swift doc comments on all public API classes, methods, and model fields
+- Landing page at https://agatx.github.io/serenada/ linking all platform docs
+
+### Changed
+- Reduced public SDK surface area across all platforms:
+  - Web: internal exports marked with `@internal` (105 → 54 doc pages)
+  - Android: 31 implementation types changed to `internal` visibility
+  - iOS: 12 implementation types changed to `internal` access
+- Moved reference docs (`serenada_protocol_v1.md`, `push-notifications.md`, `serenada_prd.md`, `wifi-lock-audio-delay-postmortem.md`) from repo root to `docs/`
+
+### Fixed
+- Removed `server/server_test` binary from git tracking
+- Added `samples/web/.gitignore` for `node_modules/` and `dist/`
+
 ## [0.1.0] — 2026-03-22
 
 ### Added
