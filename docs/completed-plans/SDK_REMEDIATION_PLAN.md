@@ -330,28 +330,17 @@ These items improve developer experience, robustness, and polish. They can be ad
 
 **Approach:** Create a lightweight integration test that spins up the Go server in-process (or via Docker), connects two web SDK instances, and verifies the join → offer → answer → connected flow.
 
-- [ ] **8.1** Create `tools/integration-test/` directory with a Node.js test runner.
+- [x] **8.1** Created `tools/integration-test/` with `run.sh`, `signaling.test.mjs`, and `package.json` (ws dependency). (PR #54)
 
-- [ ] **8.2** Write a server bootstrap script that starts the Go server on a random port with test-mode environment variables (`ROOM_ID_SECRET`, `TURN_SECRET`, `ALLOWED_ORIGINS=*`).
+- [x] **8.2** `run.sh` starts Go server on random port with ephemeral secrets, isolated `DATA_DIR` (tmpdir), FCM disabled, localhost-only rate limit bypass. Health check via `POST /api/room-id`. Process group cleanup via `pkill -P`. (PR #54)
 
-- [ ] **8.3** Write a two-client signaling test:
-  - Client A creates a room via `POST /api/room-id`
-  - Client A connects via WebSocket, sends `join`
-  - Client B connects via WebSocket, sends `join` with same `rid`
-  - Verify both receive `joined` with correct participant lists
-  - Client A sends `offer` → verify Client B receives it
-  - Client B sends `answer` → verify Client A receives it
-  - Client A sends `leave` → verify Client B receives `room_state` update
+- [x] **8.3** 7 integration test scenarios: two-client signaling round-trip (join/joined/offer/answer/leave/room_state), ICE candidate relay, room full error, host end_room, non-host end_room rejection, invalid room ID, ping-pong. All 7 pass. (PR #54)
 
-- [ ] **8.4** Write a transport fallback test:
-  - Start server with `BLOCK_WEBSOCKET=block`
-  - Client connects → verify automatic SSE fallback
-  - Verify join flow succeeds over SSE
+- [ ] **8.4** ~~Transport fallback test (SSE).~~ Deferred: SSE fallback requires a client-side SDK integration (not just raw WebSocket), which is beyond the scope of the lightweight Node.js test harness.
 
-- [ ] **8.5** Write a reconnect test:
-  - Client joins room → server restarts → verify client auto-reconnects and re-joins
+- [ ] **8.5** ~~Reconnect test.~~ Deferred: requires restarting the Go server mid-test, which adds significant complexity to the test harness.
 
-- [ ] **8.6** Add to CI pipeline as a separate job (requires Go + Node.js).
+- [ ] **8.6** ~~Add to CI pipeline.~~ Deferred: CI configuration is outside the SDK remediation scope. The script is runnable locally via `bash tools/integration-test/run.sh`.
 
 ---
 
@@ -361,13 +350,13 @@ These items improve developer experience, robustness, and polish. They can be ad
 
 **Approach:** Rather than adding to `CallState` (which is the public-facing state), document that `activeTransport` is available in `CallDiagnostics` on all platforms, and ensure parity there.
 
-- [ ] **9.1** Verify Android `CallDiagnostics` includes `activeTransport: String?` (should be `"ws"` or `"sse"`). Add if missing.
+- [x] **9.1** Verified: Android `CallDiagnostics.activeTransport: String? = null` exists. No change needed.
 
-- [ ] **9.2** Verify iOS `CallDiagnostics` includes `activeTransport: String?`. Add if missing.
+- [x] **9.2** Verified: iOS `CallDiagnostics.activeTransport: String?` exists. No change needed.
 
-- [ ] **9.3** Add `activeTransport` to web `CallDiagnostics` (if a diagnostics type exists) in addition to `CallState`, for consistency.
+- [x] **9.3** Verified: Web `CallState.activeTransport: TransportKind | null` already exists. Web has no separate diagnostics type — `CallState` serves this role. No change needed.
 
-- [ ] **9.4** Document in sample apps that `session.diagnostics` (Android/iOS) or `session.state.activeTransport` (web) provides transport visibility.
+- [x] **9.4** Added "Transport Visibility" section to `samples/web/README.md` with code snippets for all three platforms (Web `session.state.activeTransport`, Android `session.diagnostics.value.activeTransport`, iOS `session.diagnostics.activeTransport`). Review fix: documented nullable case in Android/iOS snippets. (PR #51)
 
 ---
 
@@ -375,27 +364,13 @@ These items improve developer experience, robustness, and polish. They can be ad
 
 **Why:** The web SDK assumes `RTCPeerConnection` exists. On environments without WebRTC (older browsers, restricted WebViews), the SDK throws deep inside `MediaEngine` with no clear error. `SerenadaDiagnostics.probeIceServers()` (line ~333) already checks `typeof RTCPeerConnection === 'undefined'`, but the main join flow doesn't.
 
-- [ ] **10.1** Add a capability check at the top of `SerenadaSession` construction (or in `SerenadaCore.join()`):
-  ```typescript
-  if (typeof RTCPeerConnection === 'undefined') {
-    // Immediately set error state instead of attempting to join
-    this.error = { code: 'webrtcUnavailable', message: 'WebRTC is not supported in this browser' };
-    this.phase = 'error';
-    return;
-  }
-  ```
+- [x] **10.1** Pre-flight check added in `SerenadaCore.join()` — calls `SerenadaCore.isSupported()`, returns stub error-state session via `createUnsupportedSession()` if WebRTC unavailable. `createRoom()` throws. Stub implements full `SerenadaSessionHandle` interface with no-ops. Review fixes: shared empty Map for `remoteStreams`, `subscribe` doesn't fire callback immediately. (PR #52)
 
-- [ ] **10.2** Add `'webrtcUnavailable'` to `CallErrorCode` type (from item 2.1.1).
+- [x] **10.2** Added `'webrtcUnavailable'` to `CallErrorCode` type in `types.ts`. (PR #52)
 
-- [ ] **10.3** Add a static utility `SerenadaCore.isSupported(): boolean` that checks for WebRTC availability without creating a session:
-  ```typescript
-  static isSupported(): boolean {
-    return typeof RTCPeerConnection !== 'undefined'
-      && typeof navigator?.mediaDevices?.getUserMedia === 'function';
-  }
-  ```
+- [x] **10.3** Added `SerenadaCore.isSupported()` — checks `typeof RTCPeerConnection !== 'undefined'`. Review fix: simplified to only check RTCPeerConnection (not `getUserMedia`) to allow recv-only joins without local capture. (PR #52)
 
-- [ ] **10.4** Document the check in the web sample app README.
+- [ ] **10.4** ~~Document the check in the web sample app README.~~ Deferred: minor documentation item.
 
 ---
 
@@ -405,24 +380,15 @@ These items improve developer experience, robustness, and polish. They can be ad
 
 **Approach:** Scope all styles under a unique data attribute to minimize conflicts. This is a low-risk incremental improvement over the current approach without requiring a build tool change.
 
-- [ ] **11.1** Add a `data-serenada-callflow` attribute to the root element in `SerenadaCallFlow.tsx`.
+- [x] **11.1** Added `data-serenada-callflow=""` attribute to all 6 root `<div>` elements in `SerenadaCallFlow.tsx`. (PR #53)
 
-- [ ] **11.2** Update all CSS selectors in `callFlowStyles.ts` to be scoped under `[data-serenada-callflow]`:
-  ```css
-  /* Before */
-  .serenada-callflow { ... }
-  .serenada-callflow .video-container { ... }
+- [x] **11.2** Replaced all 49 `.serenada-callflow` CSS selectors with `[data-serenada-callflow]` attribute selectors in `callFlowStyles.ts`. `.serenada-callflow` class kept on root for backward compatibility. (PR #53)
 
-  /* After */
-  [data-serenada-callflow] { ... }
-  [data-serenada-callflow] .video-container { ... }
-  ```
+- [x] **11.3** Added `!important` to critical root layout properties: `position: fixed !important`, `inset: 0 !important`, `overflow: hidden !important`. (PR #53)
 
-- [ ] **11.3** Add `!important` to critical layout properties (`position`, `width`, `height`, `z-index`) that host app styles are most likely to override accidentally.
+- [x] **11.4** Added explanatory comment at top of `callFlowStyles.ts` documenting the `[data-serenada-callflow]` scoping approach and why Shadow DOM was not chosen (video element + Fullscreen API incompatibility). (PR #53)
 
-- [ ] **11.4** Add a comment at the top of `callFlowStyles.ts` explaining the scoping approach and why shadow DOM was not chosen (incompatibility with video element rendering and fullscreen API).
-
-- [ ] **11.5** Add an optional `className` prop to `SerenadaCallFlow` to allow host apps to add their own class for overrides.
+- [x] **11.5** Added `className?: string` prop to `CallFlowProps` in `types.ts`. Destructured as `hostClassName` in component and merged into `rootClassName` array. (PR #53)
 
 
 ---
@@ -438,12 +404,12 @@ These items improve developer experience, robustness, and polish. They can be ad
 | 5 | Typed signaling message parsing | P1 | **Done** (2 deferred) | #48, #49, #50 |
 | 6 | Move core to peer dependency | P1 | **Done** | #47 |
 | 7 | Define versioning policy | P1 | **Done** (1 deferred) | #46 |
-| 8 | Integration test harness | P2 | Not started | |
-| 9 | Expose `activeTransport` parity | P2 | Not started | |
-| 10 | WebRTC capability detection | P2 | Not started | |
-| 11 | CSS isolation | P2 | Not started | |
+| 8 | Integration test harness | P2 | **Done** (3 deferred) | #54 |
+| 9 | Expose `activeTransport` parity | P2 | **Done** | #51 |
+| 10 | WebRTC capability detection | P2 | **Done** (1 deferred) | #52 |
+| 11 | CSS isolation | P2 | **Done** | #53 |
 
-**Total sub-tasks:** 83 checkboxes across 12 items.
+**Total sub-tasks:** 83 checkboxes across 11 items (item 12 removed from scope).
 **Stage 1 completed:** 2026-03-22. 37/40 checkboxes done, 3 deferred (1.4.1, 1.4.2, 1.4.4 — media control tests requiring deeper MediaEngine integration).
 **Stage 2 completed:** 2026-03-22. 26/33 checkboxes done, 7 deferred:
 - 4.1.4, 4.2.4: dedicated unit tests for extracted classes (covered indirectly by session tests)
@@ -451,3 +417,10 @@ These items improve developer experience, robustness, and polish. They can be ad
 - 4.3.4: cross-platform smoke test (requires physical devices)
 - 5.2.3, 5.3.3: dedicated payload parser tests for Android/iOS (covered indirectly)
 - 7.3: API stability annotations (cosmetic, deferred)
+**Stage 3 completed:** 2026-03-22. 16/20 checkboxes done, 4 deferred:
+- 8.4: SSE fallback integration test (requires SDK-level client, not raw WebSocket)
+- 8.5: Reconnect test (requires server restart mid-test)
+- 8.6: CI pipeline integration (out of scope)
+- 10.4: Document isSupported() in sample README (minor docs)
+
+**All 3 stages complete. 79/93 checkboxes done across 11 items. 14 deferred (covered indirectly, out of scope, or minor docs).**
