@@ -1,6 +1,6 @@
 import Foundation
 
-package struct TurnCredentials: Codable, Equatable {
+internal struct TurnCredentials: Codable, Equatable {
     public let username: String
     public let password: String
     public let uris: [String]

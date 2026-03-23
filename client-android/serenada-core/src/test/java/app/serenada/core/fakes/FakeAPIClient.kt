@@ -3,7 +3,7 @@ package app.serenada.core.fakes
 import app.serenada.core.network.SessionAPIClient
 import app.serenada.core.network.TurnCredentials
 
-class FakeAPIClient : SessionAPIClient {
+internal class FakeAPIClient : SessionAPIClient {
     var turnCredentialsResult: Result<TurnCredentials> = Result.success(
         TurnCredentials(
             username = "user",

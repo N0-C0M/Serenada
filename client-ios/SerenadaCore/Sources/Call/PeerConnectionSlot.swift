@@ -4,7 +4,7 @@ import WebRTC
 #endif
 
 @MainActor
-package final class PeerConnectionSlot: PeerConnectionSlotProtocol {
+internal final class PeerConnectionSlot: PeerConnectionSlotProtocol {
     public let remoteCid: String
 
     public private(set) var sentOffer = false

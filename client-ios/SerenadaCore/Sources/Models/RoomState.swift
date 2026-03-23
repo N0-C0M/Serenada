@@ -1,6 +1,6 @@
 import Foundation
 
-package struct RoomState: Codable, Equatable {
+internal struct RoomState: Codable, Equatable {
     public let hostCid: String
     public let participants: [Participant]
     public let maxParticipants: Int?

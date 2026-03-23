@@ -6,7 +6,7 @@ import UIKit
 import WebRTC
 #endif
 
-package struct IceServerConfig: Equatable {
+internal struct IceServerConfig: Equatable {
     public let urls: [String]
     public let username: String?
     public let credential: String?
@@ -18,7 +18,7 @@ package struct IceServerConfig: Equatable {
     }
 }
 
-package struct IceCandidatePayload: Equatable {
+internal struct IceCandidatePayload: Equatable {
     public let sdpMid: String?
     public let sdpMLineIndex: Int32
     public let candidate: String
@@ -30,7 +30,7 @@ package struct IceCandidatePayload: Equatable {
     }
 }
 
-package struct CaptureResolution: Equatable {
+internal struct CaptureResolution: Equatable {
     public let width: Int32
     public let height: Int32
 
@@ -40,7 +40,7 @@ package struct CaptureResolution: Equatable {
     }
 }
 
-package func choosePreferredCaptureResolution(
+internal func choosePreferredCaptureResolution(
     from resolutions: [CaptureResolution],
     isHdVideoExperimentalEnabled: Bool
 ) -> CaptureResolution? {
@@ -93,14 +93,14 @@ package func choosePreferredCaptureResolution(
     }
 }
 
-package enum SessionDescriptionType {
+internal enum SessionDescriptionType {
     case offer
     case answer
     case rollback
 }
 
 @MainActor
-package final class WebRtcEngine: SessionMediaEngine {
+internal final class WebRtcEngine: SessionMediaEngine {
     private let logger: SerenadaLogger?
 
     private let cameraController: CameraCaptureController

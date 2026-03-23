@@ -11,12 +11,12 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows
 import org.robolectric.shadows.ShadowLooper
 
-class FakeSessionClock(private var currentTimeMs: Long = 0L) : SessionClock {
+internal class FakeSessionClock(private var currentTimeMs: Long = 0L) : SessionClock {
     override fun nowMs(): Long = currentTimeMs
     fun advance(byMs: Long) { currentTimeMs += byMs }
 }
 
-class TestSessionFactory(
+internal class TestSessionFactory(
     val roomId: String = "test-room-id",
     val serverHost: String = "test.serenada.app",
     config: SerenadaConfig? = null,

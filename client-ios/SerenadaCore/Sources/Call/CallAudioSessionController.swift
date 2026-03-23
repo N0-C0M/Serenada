@@ -3,7 +3,7 @@ import Foundation
 import UIKit
 
 @MainActor
-package final class CallAudioSessionController: SessionAudioController {
+internal final class CallAudioSessionController: SessionAudioController {
     private var onProximityChanged: (Bool) -> Void
     private var onAudioEnvironmentChanged: () -> Void
     private let logger: SerenadaLogger?

@@ -1,7 +1,7 @@
 import Foundation
 
 @MainActor
-package protocol PeerConnectionSlotProtocol: AnyObject {
+internal protocol PeerConnectionSlotProtocol: AnyObject {
     // Identity
     var remoteCid: String { get }
 

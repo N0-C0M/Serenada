@@ -11,7 +11,7 @@ import org.webrtc.SurfaceViewRenderer
 import org.webrtc.VideoSink
 import org.webrtc.VideoTrack
 
-class FakeMediaEngine : SessionMediaEngine {
+internal class FakeMediaEngine : SessionMediaEngine {
     var startLocalMediaCalls = 0
         private set
     var releaseCalls = 0

@@ -3,7 +3,7 @@ package app.serenada.core.fakes
 import app.serenada.core.call.SessionSignaling
 import app.serenada.core.call.SignalingMessage
 
-class FakeSignaling : SessionSignaling {
+internal class FakeSignaling : SessionSignaling {
     override var listener: SessionSignaling.Listener? = null
 
     val connectCalls = mutableListOf<String>()

@@ -11,7 +11,7 @@ import org.webrtc.SurfaceViewRenderer
 import org.webrtc.VideoSink
 import org.webrtc.VideoTrack
 
-class FakePeerConnectionSlot(
+internal class FakePeerConnectionSlot(
     override val remoteCid: String,
     private val onConnectionStateChange: ((String, PeerConnection.PeerConnectionState) -> Unit)? = null,
     private val onIceConnectionStateChange: ((String, PeerConnection.IceConnectionState) -> Unit)? = null,
