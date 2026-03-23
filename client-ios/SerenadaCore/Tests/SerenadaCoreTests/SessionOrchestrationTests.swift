@@ -233,6 +233,9 @@ final class SessionOrchestrationTests: XCTestCase {
 
     func testJoinHardTimeout() async {
         await harness.advancePastPermissions()
+        // Extra yield: resumeJoin() dispatches prepareMediaAndConnect() in a Task;
+        // we need it to complete so scheduleJoinTimeout() has fired before we advance the clock.
+        await harness.yieldToMainActor()
         XCTAssertEqual(harness.session.state.phase, .joining)
 
         // Advance clock past the join hard timeout
