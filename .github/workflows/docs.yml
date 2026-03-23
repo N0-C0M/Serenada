@@ -21,6 +21,9 @@ concurrency:
   group: pages
   cancel-in-progress: true
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   docs-web:
     name: Web (TypeDoc)
@@ -124,17 +127,23 @@ jobs:
             --output-path ../docs-callui \
             --hosting-base-path ios/call-ui
 
+      - name: Tar docs to preserve filenames with special characters
+        working-directory: client-ios
+        run: |
+          tar -czf docs-core.tar.gz -C docs-core .
+          tar -czf docs-callui.tar.gz -C docs-callui .
+
       - name: Upload core docs
         uses: actions/upload-artifact@v4
         with:
           name: docs-ios-core
-          path: client-ios/docs-core/
+          path: client-ios/docs-core.tar.gz
 
       - name: Upload call-ui docs
         uses: actions/upload-artifact@v4
         with:
           name: docs-ios-call-ui
-          path: client-ios/docs-callui/
+          path: client-ios/docs-callui.tar.gz
 
   deploy:
     name: Deploy to GitHub Pages
@@ -164,8 +173,8 @@ jobs:
           cp -r artifacts/docs-web-react-ui/*  site/web/react-ui/
           cp -r artifacts/docs-android-core/*  site/android/core/
           cp -r artifacts/docs-android-call-ui/* site/android/call-ui/
-          cp -r artifacts/docs-ios-core/*      site/ios/core/
-          cp -r artifacts/docs-ios-call-ui/*   site/ios/call-ui/
+          tar -xzf artifacts/docs-ios-core/docs-core.tar.gz -C site/ios/core/
+          tar -xzf artifacts/docs-ios-call-ui/docs-callui.tar.gz -C site/ios/call-ui/
 
       - name: Generate landing page
         run: |
