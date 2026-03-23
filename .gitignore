@@ -12,6 +12,7 @@ dist/
 
 # Go
 server/server
+server/server_test
 
 # OS
 .DS_Store

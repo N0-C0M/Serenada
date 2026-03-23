@@ -207,8 +207,8 @@ Android enforces main-thread access on all public SDK entrypoints with fail-fast
 ## Documentation
 
 - [Deployment Guide](DEPLOY.md) – Self-hosting instructions
-- [Protocol Specification](serenada_protocol_v1.md) – Signaling protocol (WebSocket + SSE)
-- [Push Notifications](push-notifications.md) – Encrypted snapshot notifications
+- [Protocol Specification](docs/serenada_protocol_v1.md) – Signaling protocol (WebSocket + SSE)
+- [Push Notifications](docs/push-notifications.md) – Encrypted snapshot notifications
 - [Android Client README](client-android/README.md) – Kotlin native app setup and build notes
 - [iOS Client README](client-ios/README.md) – SwiftUI native app setup and build notes
 - `server/loadtest/run-local.sh` – Local signaling load sweep runner

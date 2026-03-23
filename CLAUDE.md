@@ -278,8 +278,8 @@ Only update docs directly relevant to your change:
 - `README.md` — end-user overview and quick start
 - `AGENTS.md` — agent coding instructions
 - `DEPLOY.md` — deployment procedures
-- `serenada_protocol_v1.md` — signaling protocol specification
-- `push-notifications.md` — push notification docs
+- `docs/serenada_protocol_v1.md` — signaling protocol specification
+- `docs/push-notifications.md` — push notification docs
 
 ## Environment
 

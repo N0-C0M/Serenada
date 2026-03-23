@@ -59,7 +59,7 @@ SDK packages must not depend on UI frameworks (no SwiftUI in SerenadaCore, no Re
 
 ## Cross-Platform Parity
 - Resilience constants are shared across all clients. Run `node scripts/check-resilience-constants.mjs` to verify.
-- Signaling protocol v1 is identical across all platforms (see `serenada_protocol_v1.md`).
+- Signaling protocol v1 is identical across all platforms (see `docs/serenada_protocol_v1.md`).
 - When changing resilience timing, update all three constant files and run the verification script.
 
 ## Documentation
@@ -67,8 +67,8 @@ SDK packages must not depend on UI frameworks (no SwiftUI in SerenadaCore, no Re
     - README.md - high-level overview for end users, including quick start instructions, description of features, and links to documentation
     - AGENTS.md - instructions for coding agents
     - DEPLOY.md - deployment instructions
-    - serenada_protocol_v1.md - protocol specification
-    - push-notifications.md - push notifications documentation
+    - docs/serenada_protocol_v1.md - protocol specification
+    - docs/push-notifications.md - push notifications documentation
 
 ## Testing
 ### Testing the web client
