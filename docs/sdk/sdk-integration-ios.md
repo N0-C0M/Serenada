@@ -257,4 +257,4 @@ let config = SerenadaConfig(
 ## Next Steps
 
 - [Feature Toggles, String Overrides & Theming](sdk-customization.md)
-- [API Reference](https://agatx.github.io/serenada/ios/core/) — also available for [SerenadaCallUI](https://agatx.github.io/serenada/ios/call-ui/)
+- [API Reference](https://agatx.github.io/serenada/ios/core/documentation/serenadacore/) — also available for [SerenadaCallUI](https://agatx.github.io/serenada/ios/call-ui/documentation/serenadacallui/)

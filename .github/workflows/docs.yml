@@ -241,8 +241,8 @@ jobs:
             <div class="platform">
               <h2>iOS (Swift)</h2>
               <ul>
-                <li><a href="ios/core/">SerenadaCore</a> <span class="desc">— Headless SDK</span></li>
-                <li><a href="ios/call-ui/">SerenadaCallUI</a> <span class="desc">— SwiftUI call flow</span></li>
+                <li><a href="ios/core/documentation/serenadacore/">SerenadaCore</a> <span class="desc">— Headless SDK</span></li>
+                <li><a href="ios/call-ui/documentation/serenadacallui/">SerenadaCallUI</a> <span class="desc">— SwiftUI call flow</span></li>
               </ul>
             </div>
           </body>
