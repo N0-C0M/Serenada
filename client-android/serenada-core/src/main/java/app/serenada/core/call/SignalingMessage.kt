@@ -2,7 +2,7 @@ package app.serenada.core.call
 
 import org.json.JSONObject
 
-class SignalingMessage(
+internal class SignalingMessage(
     val type: String,
     val rid: String?,
     val sid: String?,

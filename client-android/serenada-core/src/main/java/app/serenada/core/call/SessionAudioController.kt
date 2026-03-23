@@ -1,6 +1,6 @@
 package app.serenada.core.call
 
-interface SessionAudioController {
+internal interface SessionAudioController {
     fun activate()
     fun deactivate()
     fun shouldPauseVideoForProximity(isScreenSharing: Boolean): Boolean

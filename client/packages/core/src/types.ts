@@ -2,16 +2,22 @@ import type { TransportKind } from './signaling/transports/types.js';
 import type { SignalingMessage } from './signaling/types.js';
 import type { RoomStatus, RoomStatuses } from './signaling/roomStatuses.js';
 
+/** Current phase of the call lifecycle. */
 export type CallPhase = 'idle' | 'awaitingPermissions' | 'joining' | 'waiting' | 'inCall' | 'ending' | 'error';
 
+/** Network connection status between the client and signaling server. */
 export type ConnectionStatus = 'connected' | 'recovering' | 'retrying';
 
+/** Camera mode: selfie (front), world (rear), composite (picture-in-picture), or screen share. */
 export type CameraMode = 'selfie' | 'world' | 'composite' | 'screenShare';
 
+/** Device media capability that may require user permission. */
 export type MediaCapability = 'camera' | 'microphone';
 
+/** WebRTC peer connection state. */
 export type PeerConnectionState = 'new' | 'connecting' | 'connected' | 'disconnected' | 'failed' | 'closed';
 
+/** Remote participant in a call. */
 export interface Participant {
     cid: string;
     audioEnabled: boolean;
@@ -19,6 +25,7 @@ export interface Participant {
     connectionState: PeerConnectionState;
 }
 
+/** Local participant info including camera mode and host status. */
 export interface LocalParticipant {
     cid: string;
     audioEnabled: boolean;
@@ -27,6 +34,7 @@ export interface LocalParticipant {
     isHost: boolean;
 }
 
+/** Error codes for call failures. */
 export type CallErrorCode =
     | 'signalingTimeout'
     | 'connectionFailed'
@@ -37,11 +45,16 @@ export type CallErrorCode =
     | 'webrtcUnavailable'
     | 'unknown';
 
+/** Error with a machine-readable code and human-readable message. */
 export interface CallError {
     code: CallErrorCode;
     message: string;
 }
 
+/**
+ * Primary observable call state. This is the main state object consumers subscribe to
+ * via {@link SerenadaSessionHandle.subscribe}.
+ */
 export interface CallState {
     phase: CallPhase;
     roomId: string | null;
@@ -54,16 +67,23 @@ export interface CallState {
     error: CallError | null;
 }
 
+/** SDK configuration passed to {@link SerenadaCore}. */
 export interface SerenadaConfig {
     /** Bare host or full origin, e.g. `serenada.app` or `http://qa-box:8080`. */
     serverHost: string;
+    /** Whether the microphone is enabled when joining. Defaults to `true`. */
     defaultAudioEnabled?: boolean;
+    /** Whether the camera is enabled when joining. Defaults to `true`. */
     defaultVideoEnabled?: boolean;
+    /** Signaling transport priority order. Defaults to `['ws', 'sse']`. */
     transports?: TransportKind[];
+    /** When `true`, only use TURNS (TLS) relay candidates. */
     turnsOnly?: boolean;
+    /** Custom logger for SDK diagnostic output. */
     logger?: SerenadaLogger;
 }
 
+/** Result of creating a new room via {@link SerenadaCore.createRoom}. */
 export interface CreateRoomResult {
     url: string;
     roomId: string;
@@ -71,6 +91,10 @@ export interface CreateRoomResult {
     session: SerenadaSessionHandle;
 }
 
+/**
+ * Public interface for an active call session. Consumers should use this
+ * instead of the concrete {@link SerenadaSession} class.
+ */
 export interface SerenadaSessionHandle {
     subscribe(callback: (state: CallState) => void): () => void;
     subscribeToMessages(callback: (message: SignalingMessage) => void): () => void;
@@ -100,6 +124,7 @@ export interface SerenadaSessionHandle {
     onPermissionsRequired: ((permissions: MediaCapability[]) => void) | null;
 }
 
+/** Aggregated WebRTC call statistics (bitrate, packet loss, jitter, codec, resolution). */
 export interface CallStats {
     transportPath: string | null;
     rttMs: number | null;
@@ -125,23 +150,27 @@ export interface CallStats {
 
 export type RoomOccupancy = RoomStatus;
 
+/** Current state of room occupancy watching. */
 export interface RoomWatcherState {
     isConnected: boolean;
     activeTransport: TransportKind | null;
     roomStatuses: RoomStatuses;
 }
 
+/** Result of a single diagnostic check (available, unavailable, not authorized, or skipped). */
 export type DiagnosticCheckResult =
     | { status: 'available' }
     | { status: 'unavailable'; reason: string }
     | { status: 'notAuthorized' }
     | { status: 'skipped'; reason: string };
 
+/** Outcome of a timed connectivity check with latency on success or error on failure. */
 export type CheckOutcome =
     | { status: 'notRun' }
     | { status: 'passed'; latencyMs: number }
     | { status: 'failed'; error: string };
 
+/** Full diagnostics report covering device capabilities and server connectivity. */
 export interface DiagnosticsReport {
     camera: DiagnosticCheckResult;
     microphone: DiagnosticCheckResult;
@@ -152,6 +181,7 @@ export interface DiagnosticsReport {
     devices: MediaDeviceInfo[];
 }
 
+/** Server connectivity check results (room API, WebSocket, SSE, TURN). */
 export interface ConnectivityReport {
     roomApi: CheckOutcome;
     webSocket: CheckOutcome;
@@ -160,6 +190,7 @@ export interface ConnectivityReport {
     turnCredentials: CheckOutcome;
 }
 
+/** ICE connectivity probe results indicating STUN/TURN reachability. */
 export interface IceProbeReport {
     stunPassed: boolean;
     turnPassed: boolean;
@@ -167,8 +198,10 @@ export interface IceProbeReport {
     iceServersSummary?: string;
 }
 
+/** Log level for SDK diagnostic output. */
 export type SerenadaLogLevel = 'debug' | 'info' | 'warning' | 'error';
 
+/** Logger interface for custom log handling. Implement this to capture SDK logs. */
 export interface SerenadaLogger {
     log(level: SerenadaLogLevel, tag: string, message: string): void;
 }

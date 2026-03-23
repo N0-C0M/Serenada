@@ -1,5 +1,5 @@
 package app.serenada.core.network
 
-interface SessionAPIClient {
+internal interface SessionAPIClient {
     fun fetchTurnCredentials(host: String, token: String, onResult: (Result<TurnCredentials>) -> Unit)
 }

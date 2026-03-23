@@ -16,13 +16,13 @@ import org.webrtc.SurfaceTextureHelper
 import org.webrtc.VideoCapturer
 import org.webrtc.VideoFrame
 
-fun mirrorDisplayXInCrop(
+internal fun mirrorDisplayXInCrop(
     displayX: Float,
     cropLeft: Int,
     cropSize: Int
 ): Float = cropLeft.toFloat() + cropSize.toFloat() - 1f - (displayX - cropLeft.toFloat())
 
-class CompositeCameraCapturer(
+internal class CompositeCameraCapturer(
     context: Context,
     private val eglContext: EglBase.Context,
     private val mainCapturer: CameraVideoCapturer,

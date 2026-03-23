@@ -5,7 +5,7 @@ import app.serenada.core.SerenadaLogLevel
 import app.serenada.core.SerenadaLogger
 import okhttp3.OkHttpClient
 
-class SignalingClient(
+internal class SignalingClient(
     private val okHttpClient: OkHttpClient,
     private val handler: Handler,
     initialListener: SessionSignaling.Listener? = null,

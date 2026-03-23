@@ -18,7 +18,7 @@ import org.webrtc.VideoSink
 import org.webrtc.VideoTrack
 import kotlin.math.max
 
-class PeerConnectionSlot(
+internal class PeerConnectionSlot(
     override val remoteCid: String,
     private val factory: PeerConnectionFactory?,
     private var iceServers: List<PeerConnection.IceServer>?,

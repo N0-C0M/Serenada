@@ -11,7 +11,7 @@ import org.json.JSONObject
  * Absorbs [JoinTimer] functionality and owns all join-related timer logic.
  * Follows the closure-injection DI pattern established by [PeerNegotiationEngine].
  */
-class JoinFlowCoordinator(
+internal class JoinFlowCoordinator(
     private val handler: Handler,
     private val roomId: String,
     // State readers

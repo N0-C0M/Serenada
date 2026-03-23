@@ -15,7 +15,7 @@ public enum ContentTypeWire {
     public static let compositeCamera = "compositeCamera"
 }
 
-public func nextFlipCameraMode(current: LocalCameraMode, compositeAvailable: Bool) -> LocalCameraMode {
+package func nextFlipCameraMode(current: LocalCameraMode, compositeAvailable: Bool) -> LocalCameraMode {
     switch current {
     case .selfie:
         return .world

@@ -3,7 +3,7 @@ package app.serenada.core.call
 import android.os.Handler
 import java.util.concurrent.ExecutorService
 
-class StatsPoller(
+internal class StatsPoller(
     private val handler: Handler,
     private val clock: SessionClock,
     private val statsExecutorProvider: () -> ExecutorService?,

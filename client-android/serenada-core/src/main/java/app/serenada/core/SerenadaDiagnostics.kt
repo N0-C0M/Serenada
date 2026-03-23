@@ -49,6 +49,7 @@ class SerenadaDiagnostics(
         Thread { app.serenada.core.diagnostics.warmUpPeerConnectionFactory(appContext) }.start()
     }
 
+    /** Run all diagnostic checks and return a full report. */
     suspend fun runAll(): DiagnosticsReport = suspendCancellableCoroutine { continuation ->
         runAll { report ->
             if (continuation.isActive) {
@@ -57,6 +58,7 @@ class SerenadaDiagnostics(
         }
     }
 
+    /** Callback-based variant of [runAll]. Results are delivered on the main thread. */
     fun runAll(completion: (DiagnosticsReport) -> Unit) {
         var cameraResult: DiagnosticCheckResult? = null
         var micResult: DiagnosticCheckResult? = null
@@ -95,6 +97,7 @@ class SerenadaDiagnostics(
         enumerateDevices { devices = it; tryComplete() }
     }
 
+    /** Test server connectivity (room API, WebSocket, SSE, TURN). */
     suspend fun runConnectivityChecks(host: String = config.serverHost): ConnectivityReport = withContext(Dispatchers.IO) {
         val normalizedHost = host.trim().ifBlank { config.serverHost }
         // Fetch the diagnostic token once and reuse it for the TURN credentials check.
@@ -116,6 +119,7 @@ class SerenadaDiagnostics(
         )
     }
 
+    /** Probe ICE connectivity (STUN/TURN) and return candidate details. */
     suspend fun runIceProbe(
         turnsOnly: Boolean,
         host: String = config.serverHost,
@@ -135,6 +139,7 @@ class SerenadaDiagnostics(
         )
     }
 
+    /** Check whether a camera is available and authorized. */
     fun checkCamera(completion: (DiagnosticCheckResult) -> Unit) {
         if (appContext.checkSelfPermission(Manifest.permission.CAMERA)
             != PackageManager.PERMISSION_GRANTED
@@ -155,6 +160,7 @@ class SerenadaDiagnostics(
         }
     }
 
+    /** Check whether a microphone is available and authorized. */
     fun checkMicrophone(completion: (DiagnosticCheckResult) -> Unit) {
         if (appContext.checkSelfPermission(Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED
@@ -170,6 +176,7 @@ class SerenadaDiagnostics(
         }
     }
 
+    /** Check whether an audio output (speaker) is available. */
     fun checkSpeaker(completion: (DiagnosticCheckResult) -> Unit) {
         val audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
         if (audioManager != null) {
@@ -179,6 +186,7 @@ class SerenadaDiagnostics(
         }
     }
 
+    /** Check whether a network connection is available. */
     fun checkNetwork(completion: (DiagnosticCheckResult) -> Unit) {
         val cm = appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
         if (cm?.activeNetwork != null) {
@@ -188,6 +196,7 @@ class SerenadaDiagnostics(
         }
     }
 
+    /** Check signaling server connectivity (WebSocket or SSE). */
     fun checkSignaling(completion: (SignalingCheckResult) -> Unit) {
         val forceSse = config.transports == listOf(SerenadaTransport.SSE)
         var diagClient: SignalingClient? = null
@@ -223,6 +232,7 @@ class SerenadaDiagnostics(
         diagClient.connect(config.serverHost)
     }
 
+    /** Check TURN server reachability and measure latency. */
     fun checkTurn(completion: (TurnCheckResult) -> Unit) {
         apiClient.fetchDiagnosticToken(config.serverHost) { tokenResult ->
             tokenResult
@@ -241,6 +251,7 @@ class SerenadaDiagnostics(
         }
     }
 
+    /** Validate that a server host is reachable. Throws on failure. */
     suspend fun validateServerHost(host: String = config.serverHost) {
         suspendCancellableCoroutine<Unit> { continuation ->
             apiClient.validateServerHost(host) { result ->

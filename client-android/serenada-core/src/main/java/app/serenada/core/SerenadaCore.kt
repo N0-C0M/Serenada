@@ -15,10 +15,14 @@ import okhttp3.OkHttpClient
  * or [createRoom] to create a new room.
  */
 class SerenadaCore(
+    /** SDK configuration. */
     val config: SerenadaConfig,
     private val context: Context,
 ) {
+    /** Callback delegate for session lifecycle events. */
     var delegate: SerenadaCoreDelegate? = null
+
+    /** Logger instance for debug output. */
     var logger: SerenadaLogger? = null
 
     private val okHttpClient = OkHttpClient.Builder().build()

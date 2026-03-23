@@ -1,12 +1,12 @@
 package app.serenada.core.call
 
-data class RoomState(
+internal data class RoomState(
     val hostCid: String,
     val participants: List<Participant>,
     val maxParticipants: Int? = null,
 )
 
-data class Participant(
+internal data class Participant(
     val cid: String,
     val joinedAt: Long?
 )

@@ -2,7 +2,7 @@ package app.serenada.core.call
 
 import android.os.Handler
 
-class JoinTimer(
+internal class JoinTimer(
     private val handler: Handler,
     private val getPhase: () -> CallPhase,
     private val getJoinAttemptSerial: () -> Long,

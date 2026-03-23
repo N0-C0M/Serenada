@@ -15,7 +15,7 @@ import android.os.Handler
 import app.serenada.core.SerenadaLogLevel
 import app.serenada.core.SerenadaLogger
 
-class CallAudioSessionController(
+internal class CallAudioSessionController(
     context: Context,
     private val handler: Handler,
     private val onProximityChanged: (Boolean) -> Unit,

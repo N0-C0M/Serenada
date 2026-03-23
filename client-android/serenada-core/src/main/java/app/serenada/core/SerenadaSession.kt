@@ -50,7 +50,9 @@ import java.util.concurrent.Executors
  * Control the call via [leave], [end], [toggleAudio], [toggleVideo], etc.
  */
 class SerenadaSession internal constructor(
+    /** The room ID for this call session. */
     val roomId: String,
+    /** Full URL for this call session (e.g. "https://serenada.app/call/ABC123"). */
     val roomUrl: String?,
     private val serverHost: String,
     private val config: SerenadaConfig,
@@ -74,9 +76,11 @@ class SerenadaSession internal constructor(
     private val powerManager = appContext.getSystemService(Context.POWER_SERVICE) as PowerManager
 
     private val _state = MutableStateFlow(CallState())
+    /** Primary observable call state. Collect this flow for UI updates. */
     val state: StateFlow<CallState> = _state.asStateFlow()
 
     private val _diagnostics = MutableStateFlow(CallDiagnostics())
+    /** Real-time connection diagnostics (stats, transport state, ICE state). */
     val diagnostics: StateFlow<CallDiagnostics> = _diagnostics.asStateFlow()
 
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
@@ -293,6 +297,7 @@ class SerenadaSession internal constructor(
         )
     }
 
+    /** Callback invoked when camera/microphone permissions are needed before joining. */
     var onPermissionsRequired: ((List<MediaCapability>) -> Unit)? = null
 
     val host: String
@@ -361,6 +366,7 @@ class SerenadaSession internal constructor(
 
     // --- Public API ---
 
+    /** Leave the call gracefully. The other participant stays in the room. */
     fun leave() {
         assertMainThread()
         if (_state.value.phase == CallPhase.Idle) return
@@ -368,12 +374,14 @@ class SerenadaSession internal constructor(
         cleanupCall(EndReason.LocalLeft)
     }
 
+    /** End the call for all participants. */
     fun end() {
         assertMainThread()
         sendMessage("end_room", null)
         leave()
     }
 
+    /** Toggle local audio on or off. */
     fun toggleAudio() {
         assertMainThread()
         val enabled = !_state.value.localAudioEnabled
@@ -381,12 +389,14 @@ class SerenadaSession internal constructor(
         updateState(_state.value.copy(localAudioEnabled = enabled))
     }
 
+    /** Toggle local video on or off. */
     fun toggleVideo() {
         assertMainThread()
         userPreferredVideoEnabled = !_state.value.localVideoEnabled
         applyLocalVideoPreference()
     }
 
+    /** Cycle to the next camera mode (selfie -> world -> composite). */
     fun flipCamera() {
         assertMainThread()
         if (!_diagnostics.value.isScreenSharing) {
@@ -396,11 +406,13 @@ class SerenadaSession internal constructor(
         }
     }
 
+    /** Set a specific camera mode. */
     fun setCameraMode(@Suppress("UNUSED_PARAMETER") mode: LocalCameraMode) {
         assertMainThread()
         flipCamera()
     }
 
+    /** Start screen sharing using the given media projection intent. */
     fun startScreenShare(intent: Intent) {
         assertMainThread()
         if (_diagnostics.value.isScreenSharing) return
@@ -413,6 +425,7 @@ class SerenadaSession internal constructor(
         applyLocalVideoPreference()
     }
 
+    /** Stop screen sharing and return to camera. */
     fun stopScreenShare() {
         assertMainThread()
         if (!_diagnostics.value.isScreenSharing) return
@@ -425,6 +438,7 @@ class SerenadaSession internal constructor(
         applyLocalVideoPreference()
     }
 
+    /** Capture a JPEG snapshot of the local video frame. */
     fun captureLocalSnapshot(onResult: (ByteArray?) -> Unit) {
         assertMainThread()
         LocalFrameSnapshotCapture(
@@ -434,6 +448,7 @@ class SerenadaSession internal constructor(
         ).capture(onResult)
     }
 
+    /** Resume joining after camera/microphone permissions have been granted. */
     fun resumeJoin() {
         assertMainThread()
         if (!awaitingPermissions) return
@@ -451,6 +466,7 @@ class SerenadaSession internal constructor(
         startJoinInternal()
     }
 
+    /** Cancel an in-progress join attempt. */
     fun cancelJoin() {
         assertMainThread()
         if (awaitingPermissions) {
@@ -459,6 +475,7 @@ class SerenadaSession internal constructor(
         }
     }
 
+    /** Attach a [SurfaceViewRenderer][org.webrtc.SurfaceViewRenderer] for local video preview. */
     fun attachLocalRenderer(
         renderer: org.webrtc.SurfaceViewRenderer,
         rendererEvents: org.webrtc.RendererCommon.RendererEvents? = null,
@@ -467,11 +484,13 @@ class SerenadaSession internal constructor(
         webRtcEngine.attachLocalRenderer(renderer, rendererEvents)
     }
 
+    /** Detach a previously attached local video renderer. */
     fun detachLocalRenderer(renderer: org.webrtc.SurfaceViewRenderer) {
         assertMainThread()
         webRtcEngine.detachLocalRenderer(renderer)
     }
 
+    /** Attach a [SurfaceViewRenderer][org.webrtc.SurfaceViewRenderer] for remote video. */
     fun attachRemoteRenderer(
         renderer: org.webrtc.SurfaceViewRenderer,
         rendererEvents: org.webrtc.RendererCommon.RendererEvents? = null,
@@ -486,6 +505,7 @@ class SerenadaSession internal constructor(
         attachRemoteRendererForCid(remoteCid, renderer, rendererEvents)
     }
 
+    /** Detach a previously attached remote video renderer. */
     fun detachRemoteRenderer(renderer: org.webrtc.SurfaceViewRenderer) {
         assertMainThread()
         peerSlots.values.forEach { it.detachRemoteRenderer(renderer) }
@@ -542,16 +562,19 @@ class SerenadaSession internal constructor(
         peerSlots[cid]?.detachRemoteSink(sink)
     }
 
+    /** Get the EGL context for custom rendering or renderer initialization. */
     fun eglContext(): org.webrtc.EglBase.Context {
         assertMainThread()
         return webRtcEngine.getEglContext()
     }
 
+    /** Adjust the camera zoom level by the given scale factor. */
     fun adjustLocalCameraZoom(scaleFactor: Float) {
         assertMainThread()
         webRtcEngine.adjustWorldCameraZoom(scaleFactor)
     }
 
+    /** Toggle the device flashlight on or off. */
     fun toggleFlashlight() {
         assertMainThread()
         webRtcEngine.toggleFlashlight()

@@ -4,6 +4,11 @@ import { SerenadaSession } from './SerenadaSession.js';
 import { createRoomId } from './api/roomApi.js';
 import { buildRoomUrl } from './serverUrls.js';
 
+/**
+ * Main entry point for the Serenada SDK.
+ * Create an instance with a {@link SerenadaConfig}, then use {@link join} or
+ * {@link createRoom} to start a call.
+ */
 export class SerenadaCore {
     private config: SerenadaConfig;
 
@@ -11,11 +16,14 @@ export class SerenadaCore {
         this.config = config;
     }
 
+    /** Check if the current browser supports WebRTC calling. */
     static isSupported(): boolean {
         return typeof RTCPeerConnection !== 'undefined';
     }
 
+    /** Join an existing call by URL. Returns a session handle. */
     join(url: string): SerenadaSessionHandle;
+    /** Join an existing call by room ID. Returns a session handle. */
     join(options: { roomId: string }): SerenadaSessionHandle;
     join(urlOrOptions: string | { roomId: string }): SerenadaSessionHandle {
         if (!SerenadaCore.isSupported()) {
@@ -29,6 +37,7 @@ export class SerenadaCore {
         return new SerenadaSession(this.config, urlOrOptions.roomId, roomUrl);
     }
 
+    /** Create a new room and immediately join it. Returns the room URL, ID, and session handle. */
     async createRoom(): Promise<CreateRoomResult> {
         if (!SerenadaCore.isSupported()) {
             throw new Error('WebRTC is not supported in this environment');

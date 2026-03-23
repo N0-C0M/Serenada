@@ -1,6 +1,6 @@
 package app.serenada.core.call
 
-interface SessionSignaling {
+internal interface SessionSignaling {
     interface Listener {
         fun onOpen(activeTransport: String)
         fun onMessage(message: SignalingMessage)

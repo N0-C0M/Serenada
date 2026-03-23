@@ -9,6 +9,10 @@ interface RoomWatcherDependencies {
     createSignalingEngine?: (config: SignalingEngineConfig) => SignalingEngine;
 }
 
+/**
+ * Monitors room occupancy via the signaling server.
+ * Use to show room status (e.g. "1 person waiting") before joining a call.
+ */
 export class RoomWatcher {
     private readonly signaling: SignalingEngine;
     private readonly unsubscribeStateChange: () => void;
@@ -47,6 +51,7 @@ export class RoomWatcher {
         return filterRoomStatuses(this.signaling.roomStatuses, this.watchedRoomIds);
     }
 
+    /** Subscribe to room status updates. Returns an unsubscribe function. */
     subscribe(listener: RoomWatcherListener): () => void {
         this.listeners.add(listener);
         listener(this.snapshot());
@@ -55,6 +60,7 @@ export class RoomWatcher {
         };
     }
 
+    /** Start watching the given room IDs for occupancy changes. Replaces any previous watch list. */
     watchRooms(roomIds: string[]): void {
         if (this.stopped) return;
 
@@ -76,6 +82,7 @@ export class RoomWatcher {
         }
     }
 
+    /** Stop watching all rooms and release resources. */
     stop(): void {
         if (this.stopped) return;
 

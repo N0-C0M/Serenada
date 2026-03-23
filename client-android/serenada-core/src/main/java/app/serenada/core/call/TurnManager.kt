@@ -6,7 +6,7 @@ import app.serenada.core.network.TurnCredentials
 import org.json.JSONObject
 import org.webrtc.PeerConnection
 
-class TurnManager(
+internal class TurnManager(
     private val handler: Handler,
     private val serverHost: String,
     private val apiClient: SessionAPIClient,

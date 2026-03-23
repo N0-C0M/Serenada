@@ -31,6 +31,10 @@ function mapErrorCode(serverCode: string): CallErrorCode {
     }
 }
 
+/**
+ * Represents an active call session. Created via {@link SerenadaCore.join} or
+ * {@link SerenadaCore.createRoom}. Manages media, signaling, and call state.
+ */
 export class SerenadaSession implements SerenadaSessionHandle {
     private signaling: SignalingEngine;
     private media: MediaEngine;
@@ -121,9 +125,13 @@ export class SerenadaSession implements SerenadaSessionHandle {
         }
     }
 
+    /** Current call state. Subscribe via {@link subscribe} for updates. */
     get state(): CallState { return this._state; }
+    /** Local media stream (camera/microphone), or `null` before media is acquired. */
     get localStream(): MediaStream | null { return this.media.localStream; }
+    /** Map of remote participant CID to their media stream. */
     get remoteStreams(): Map<string, MediaStream> { return this.media.remoteStreams; }
+    /** Current WebRTC call statistics, or `null` if not yet collecting. */
     get callStats(): CallStats | null { return this.statsCollector.stats; }
     get hasMultipleCameras(): boolean { return this.media.hasMultipleCameras; }
     get canScreenShare(): boolean { return this.media.canScreenShare; }
@@ -132,6 +140,7 @@ export class SerenadaSession implements SerenadaSessionHandle {
     get peerConnectionState(): RTCPeerConnectionState { return this.media.connectionState; }
     get rtcSignalingState(): RTCSignalingState { return this.media.signalingState; }
 
+    /** Subscribe to state changes. Returns an unsubscribe function. */
     subscribe(callback: (state: CallState) => void): () => void {
         this.stateListeners.push(callback);
         return () => {
@@ -143,6 +152,7 @@ export class SerenadaSession implements SerenadaSessionHandle {
         return this.signaling.subscribeToMessages(callback);
     }
 
+    /** Resume joining after media permissions have been granted. */
     async resumeJoin(): Promise<void> {
         this.permissionCheckDone = true;
         const stream = await this.media.startLocalMedia();
@@ -151,6 +161,7 @@ export class SerenadaSession implements SerenadaSessionHandle {
         }
     }
 
+    /** Cancel an in-progress join and destroy the session. */
     cancelJoin(): void {
         this.permissionCheckDone = true;
         this._state = { ...this._state, phase: 'idle', requiredPermissions: null };
@@ -158,6 +169,7 @@ export class SerenadaSession implements SerenadaSessionHandle {
         this.destroy();
     }
 
+    /** Leave the call gracefully. The other participant stays connected. */
     leave(): void {
         if (this._destroyed) return;
         this.signaling.leaveRoom();
@@ -168,17 +180,23 @@ export class SerenadaSession implements SerenadaSessionHandle {
         this.destroy();
     }
 
+    /** End the call for all participants. */
     end(): void {
         this.signaling.endRoom();
         this.leave();
     }
 
+    /** Toggle local audio on/off. */
     toggleAudio(): void { this.setTrackEnabled('audio'); }
+    /** Toggle local video on/off. */
     toggleVideo(): void { this.setTrackEnabled('video'); }
 
+    /** Set local audio enabled state explicitly. */
     setAudioEnabled(enabled: boolean): void { this.setTrackEnabled('audio', enabled); }
+    /** Set local video enabled state explicitly. */
     setVideoEnabled(enabled: boolean): void { this.setTrackEnabled('video', enabled); }
 
+    /** Switch camera mode (selfie/world). Composite is not available on web. */
     setCameraMode(_mode: CameraMode): void {
         // Web only supports selfie/world via flipCamera; composite is not available
         if (_mode === 'world' && this.media.facingMode === 'user') {
@@ -188,18 +206,22 @@ export class SerenadaSession implements SerenadaSessionHandle {
         }
     }
 
+    /** Cycle to the next camera mode (selfie to world or vice versa). */
     async flipCamera(): Promise<void> {
         await this.media.flipCamera();
     }
 
+    /** Start sharing the screen, replacing the camera video track. */
     async startScreenShare(): Promise<void> {
         await this.media.startScreenShare();
     }
 
+    /** Stop screen sharing and restore the camera video track. */
     async stopScreenShare(): Promise<void> {
         await this.media.stopScreenShare();
     }
 
+    /** Clean up all resources. Call when done with the session. */
     destroy(): void {
         if (this._destroyed) return;
         this._destroyed = true;

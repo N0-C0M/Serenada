@@ -68,9 +68,11 @@ export type {
     StageRowLayout,
 } from './layout/computeLayout.js';
 
-// Signaling types re-exported for advanced usage
+/** @internal Signaling types re-exported for advanced usage */
 export type { TransportKind } from './signaling/transports/types.js';
+/** @internal */
 export type { RoomState, SignalingMessage } from './signaling/types.js';
+/** @internal */
 export type {
     JoinedPayload,
     ErrorPayload,
@@ -79,6 +81,7 @@ export type {
     AnswerPayload,
     IceCandidatePayload,
 } from './signaling/payloads.js';
+/** @internal */
 export {
     parseJoinedPayload,
     parseRoomStatePayload,
@@ -88,11 +91,17 @@ export {
     parseAnswerPayload,
     parseIceCandidatePayload,
 } from './signaling/payloads.js';
+/** @internal */
 export type { RoomStatus, RoomStatuses } from './signaling/roomStatuses.js';
+/** @internal */
 export { getRoomStatusState, mergeRoomStatusesPayload, mergeRoomStatusUpdatePayload } from './signaling/roomStatuses.js';
+/** @internal */
 export { parseTransportOrder } from './signaling/transportConfig.js';
 
-// Resilience constants
+/**
+ * @internal
+ * Resilience constants
+ */
 export {
     RECONNECT_BACKOFF_BASE_MS, RECONNECT_BACKOFF_CAP_MS,
     CONNECT_TIMEOUT_MS, PING_INTERVAL_MS, PONG_MISS_THRESHOLD,
@@ -107,13 +116,15 @@ export {
     LOCAL_VIDEO_RESUME_GAP_MS, LOCAL_VIDEO_HEARTBEAT_INTERVAL_MS,
 } from './constants.js';
 
-// Local video recovery utilities
+/** @internal Local video recovery utilities */
 export { shouldForceLocalVideoRefresh, shouldRecoverLocalVideo } from './media/localVideoRecovery.js';
 
-// Room API
+/** @internal */
 export { createRoomId } from './api/roomApi.js';
+/** @internal */
 export { buildApiUrl, buildRoomUrl, resolveServerBaseUrl, resolveServerUrls } from './serverUrls.js';
 
-// Advanced host-app usage
+/** @internal Advanced host-app usage */
 export { SignalingEngine } from './signaling/SignalingEngine.js';
+/** @internal */
 export type { SignalingEngineConfig } from './signaling/SignalingEngine.js';

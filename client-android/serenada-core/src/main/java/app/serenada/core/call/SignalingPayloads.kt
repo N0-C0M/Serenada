@@ -8,7 +8,7 @@ import org.json.JSONObject
  * Replaces raw JSONObject parsing scattered across SerenadaSession.
  */
 
-data class JoinedPayload(
+internal data class JoinedPayload(
     val hostCid: String?,
     val participants: List<Participant>,
     val turnToken: String?,
@@ -17,18 +17,18 @@ data class JoinedPayload(
     val maxParticipants: Int?,
 )
 
-data class RoomStatePayload(
+internal data class RoomStatePayload(
     val hostCid: String?,
     val participants: List<Participant>,
     val maxParticipants: Int?,
 )
 
-data class ErrorPayload(
+internal data class ErrorPayload(
     val code: String?,
     val message: String?,
 )
 
-data class ContentStatePayload(
+internal data class ContentStatePayload(
     val fromCid: String,
     val active: Boolean,
     val contentType: String?,
@@ -36,7 +36,7 @@ data class ContentStatePayload(
 
 // --- Extension parsers ---
 
-fun JSONObject?.toJoinedPayload(): JoinedPayload? {
+internal fun JSONObject?.toJoinedPayload(): JoinedPayload? {
     this ?: return null
     return JoinedPayload(
         hostCid = optString("hostCid").ifBlank { null },
@@ -48,7 +48,7 @@ fun JSONObject?.toJoinedPayload(): JoinedPayload? {
     )
 }
 
-fun JSONObject?.toRoomStatePayload(): RoomStatePayload? {
+internal fun JSONObject?.toRoomStatePayload(): RoomStatePayload? {
     this ?: return null
     return RoomStatePayload(
         hostCid = optString("hostCid").ifBlank { null },
@@ -57,7 +57,7 @@ fun JSONObject?.toRoomStatePayload(): RoomStatePayload? {
     )
 }
 
-fun JSONObject?.toErrorPayload(): ErrorPayload? {
+internal fun JSONObject?.toErrorPayload(): ErrorPayload? {
     this ?: return null
     return ErrorPayload(
         code = optString("code").trim().ifBlank { null },
@@ -65,7 +65,7 @@ fun JSONObject?.toErrorPayload(): ErrorPayload? {
     )
 }
 
-fun JSONObject?.toContentStatePayload(): ContentStatePayload? {
+internal fun JSONObject?.toContentStatePayload(): ContentStatePayload? {
     this ?: return null
     val fromCid = optString("from").ifBlank { return null }
     val active = optBoolean("active")
@@ -79,7 +79,7 @@ fun JSONObject?.toContentStatePayload(): ContentStatePayload? {
 
 // --- Helpers ---
 
-fun JSONArray?.toParticipantList(): List<Participant> {
+internal fun JSONArray?.toParticipantList(): List<Participant> {
     this ?: return emptyList()
     val result = mutableListOf<Participant>()
     for (i in 0 until length()) {

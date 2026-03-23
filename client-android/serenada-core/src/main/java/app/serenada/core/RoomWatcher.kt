@@ -18,10 +18,14 @@ interface RoomWatcherDelegate {
     fun roomWatcher(watcher: RoomWatcher, didUpdateStatuses: Map<String, RoomOccupancy>)
 }
 
+/**
+ * Monitors room occupancy via signaling. Use this to show room status before joining.
+ */
 class RoomWatcher @JvmOverloads constructor(
     okHttpClient: OkHttpClient = OkHttpClient.Builder().build(),
     private val handler: Handler = Handler(Looper.getMainLooper()),
 ) {
+    /** Callback for room status change events. */
     var delegate: RoomWatcherDelegate? = null
 
     private lateinit var signalingClient: SignalingClient
@@ -74,9 +78,11 @@ class RoomWatcher @JvmOverloads constructor(
         )
     }
 
+    /** Current occupancy map of watched rooms, keyed by room ID. */
     val currentStatuses: Map<String, RoomOccupancy>
         get() = statuses
 
+    /** Start watching the given room IDs for occupancy changes. */
     fun watchRooms(roomIds: List<String>, host: String) {
         val hostChanged = this.host?.equals(host, ignoreCase = true) == false
         this.host = host
@@ -102,6 +108,7 @@ class RoomWatcher @JvmOverloads constructor(
         }
     }
 
+    /** Stop watching all rooms and disconnect. */
     fun stop() {
         clearReconnect()
         watchedRoomIds = emptyList()

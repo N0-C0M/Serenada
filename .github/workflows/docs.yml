@@ -108,10 +108,11 @@ jobs:
             -derivedDataPath ../.docbuild/core
 
           ARCHIVE=$(find ../.docbuild/core -name 'SerenadaCore.doccarchive' -type d | head -1)
+          REPO_NAME=$(echo "${{ github.repository }}" | cut -d/ -f2)
           $(xcrun --find docc) process-archive transform-for-static-hosting \
             "$ARCHIVE" \
             --output-path ../docs-core \
-            --hosting-base-path ios/core
+            --hosting-base-path "$REPO_NAME/ios/core"
 
       - name: Build SerenadaCallUI documentation
         working-directory: client-ios/SerenadaCallUI
@@ -121,11 +122,12 @@ jobs:
             -destination 'generic/platform=iOS' \
             -derivedDataPath ../.docbuild/callui
 
+          REPO_NAME=$(echo "${{ github.repository }}" | cut -d/ -f2)
           ARCHIVE=$(find ../.docbuild/callui -name 'SerenadaCallUI.doccarchive' -type d | head -1)
           $(xcrun --find docc) process-archive transform-for-static-hosting \
             "$ARCHIVE" \
             --output-path ../docs-callui \
-            --hosting-base-path ios/call-ui
+            --hosting-base-path "$REPO_NAME/ios/call-ui"
 
       - name: Tar docs to preserve filenames with special characters
         working-directory: client-ios

@@ -8,7 +8,7 @@ import org.webrtc.SurfaceViewRenderer
 import org.webrtc.VideoSink
 import org.webrtc.VideoTrack
 
-interface PeerConnectionSlotProtocol {
+internal interface PeerConnectionSlotProtocol {
     // Properties
     val remoteCid: String
     val sentOffer: Boolean

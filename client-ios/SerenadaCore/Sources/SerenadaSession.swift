@@ -22,14 +22,22 @@ func resolveJoinRecoveryState(
     return JoinRecoveryState(phase: .waiting, participantCount: 1)
 }
 
+/// Represents an active call session. Created via ``SerenadaCore/join(url:)`` or ``SerenadaCore/createRoom()``.
+/// Publishes state via `@Published` properties for SwiftUI integration.
 @MainActor
 public final class SerenadaSession: ObservableObject {
+    /// Current call state. Observe with SwiftUI or Combine for UI updates.
     @Published public private(set) var state = CallState()
+    /// Real-time connection diagnostics.
     @Published public private(set) var diagnostics = CallDiagnostics()
 
+    /// Room identifier for this session.
     public let roomId: String
+    /// Full URL for this room, if available.
     public let roomUrl: URL?
+    /// Server host used for signaling.
     public let serverHost: String
+    /// Bundle ID for the broadcast upload extension used in screen sharing.
     public var screenShareExtensionBundleId: String? {
         #if BROADCAST_EXTENSION
         BroadcastShared.extensionBundleId
@@ -38,6 +46,7 @@ public final class SerenadaSession: ObservableObject {
         #endif
     }
 
+    /// Callback invoked when camera/microphone permissions are needed before joining.
     public var onPermissionsRequired: (([MediaCapability]) -> Void)?
 
     // Core dependencies
@@ -154,27 +163,32 @@ public final class SerenadaSession: ObservableObject {
 
     // MARK: - Public API
 
+    /// Leave the call gracefully. The other participant stays connected.
     public func leave() {
         if currentRoomState != nil || signalingClient.isConnected() { sendMessage(type: "leave") }
         cleanupCall(reason: .localLeft, transitionToEnding: false)
     }
 
+    /// End the call for all participants.
     public func end() {
         if currentRoomState != nil || signalingClient.isConnected() { sendMessage(type: "end_room") }
         cleanupCall(reason: .localLeft, transitionToEnding: false)
     }
 
+    /// Toggle local audio on or off.
     public func toggleAudio() {
         let enabled = !state.localParticipant.audioEnabled
         webRtcEngine.toggleAudio(enabled)
         commitSnapshot { s, _ in s.localParticipant.audioEnabled = enabled }
     }
 
+    /// Toggle local video on or off.
     public func toggleVideo() {
         userPreferredVideoEnabled = !state.localParticipant.videoEnabled
         applyLocalVideoPreference()
     }
 
+    /// Cycle to the next camera mode (selfie -> world -> composite).
     public func flipCamera() {
         guard !diagnostics.isScreenSharing else { return }
         if state.localParticipant.cameraMode.isContentMode {
@@ -183,21 +197,25 @@ public final class SerenadaSession: ObservableObject {
         webRtcEngine.flipCamera()
     }
 
+    /// Set a specific camera mode.
     public func setCameraMode(_ mode: LocalCameraMode) {
         guard mode != state.localParticipant.cameraMode else { return }
         for _ in 0..<4 where state.localParticipant.cameraMode != mode { flipCamera() }
     }
 
+    /// Set local audio enabled state.
     public func setAudioEnabled(_ enabled: Bool) {
         webRtcEngine.toggleAudio(enabled)
         commitSnapshot { s, _ in s.localParticipant.audioEnabled = enabled }
     }
 
+    /// Set local video enabled state.
     public func setVideoEnabled(_ enabled: Bool) {
         userPreferredVideoEnabled = enabled
         applyLocalVideoPreference()
     }
 
+    /// Start screen sharing via the broadcast upload extension.
     public func startScreenShare() {
         guard !diagnostics.isScreenSharing else { return }
         _ = webRtcEngine.startScreenShare { [weak self] started in
@@ -212,18 +230,23 @@ public final class SerenadaSession: ObservableObject {
         }
     }
 
+    /// Stop screen sharing.
     public func stopScreenShare() { _ = webRtcEngine.stopScreenShare() }
     public func setHdVideoExperimentalEnabled(_ enabled: Bool) { webRtcEngine.setHdVideoExperimentalEnabled(enabled) }
+    /// Toggle the device flashlight. Returns whether the flashlight is now on.
     @discardableResult public func toggleFlashlight() -> Bool { webRtcEngine.toggleFlashlight() }
 
+    /// Adjust camera zoom by a relative scale delta. Returns the new zoom factor, or nil if inactive.
     @discardableResult
     public func adjustCameraZoom(by scaleDelta: CGFloat) -> Double? {
         guard internalPhase == .inCall, state.localParticipant.cameraMode.isContentMode else { return nil }
         return webRtcEngine.adjustCaptureZoom(by: scaleDelta)
     }
 
+    /// Reset camera zoom to 1x.
     @discardableResult public func resetCameraZoom() -> Double { webRtcEngine.resetCaptureZoom() }
 
+    /// Resume joining after camera/microphone permissions have been granted.
     public func resumeJoin() {
         currentRequiredPermissions = nil
         currentError = nil
@@ -234,6 +257,7 @@ public final class SerenadaSession: ObservableObject {
         }
     }
 
+    /// Cancel an in-progress join and return to idle.
     public func cancelJoin() {
         currentRequiredPermissions = nil
         resetResources()
@@ -241,15 +265,19 @@ public final class SerenadaSession: ObservableObject {
         commitSnapshot()
     }
 
+    /// Attach a view for rendering local video.
     public func attachLocalRenderer(_ renderer: AnyObject) { webRtcEngine.attachLocalRenderer(renderer) }
+    /// Detach a previously attached local video renderer.
     public func detachLocalRenderer(_ renderer: AnyObject) { webRtcEngine.detachLocalRenderer(renderer) }
 
+    /// Attach a view for rendering remote video.
     public func attachRemoteRenderer(_ renderer: AnyObject) {
         let cid = currentRoomState?.participants.first(where: { $0.cid != clientId })?.cid ?? peerSlots.keys.first
         guard let cid else { return }
         attachRemoteRenderer(renderer, forParticipant: cid)
     }
 
+    /// Detach a previously attached remote video renderer.
     public func detachRemoteRenderer(_ renderer: AnyObject) { peerSlots.values.forEach { $0.detachRemoteRenderer(renderer) } }
     public func attachRemoteRenderer(_ renderer: AnyObject, forParticipant cid: String) { peerSlots[cid]?.attachRemoteRenderer(renderer) }
     public func detachRemoteRenderer(_ renderer: AnyObject, forParticipant cid: String) { peerSlots[cid]?.detachRemoteRenderer(renderer) }

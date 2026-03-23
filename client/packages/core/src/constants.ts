@@ -1,5 +1,7 @@
 /**
  * Canonical WebRTC resilience constants shared across all Serenada clients.
+ * @internal
+ * @module
  */
 
 // Signaling

@@ -30,7 +30,7 @@ import org.webrtc.VideoTrack
 import org.webrtc.audio.AudioDeviceModule
 import org.webrtc.audio.JavaAudioDeviceModule
 
-class WebRtcEngine(
+internal class WebRtcEngine(
     context: Context,
     private val onCameraFacingChanged: (Boolean) -> Unit,
     private val onCameraModeChanged: (LocalCameraMode) -> Unit,

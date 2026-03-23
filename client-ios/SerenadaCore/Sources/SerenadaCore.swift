@@ -1,11 +1,13 @@
 import Foundation
 
+/// Reason a call ended.
 public enum EndReason: Equatable, Sendable {
     case localLeft
     case remoteEnded
     case error(String)
 }
 
+/// Delegate for session lifecycle events (state changes, permissions, call end).
 @MainActor
 public protocol SerenadaCoreDelegate: AnyObject {
     func sessionRequiresPermissions(_ session: SerenadaSession, permissions: [MediaCapability])
@@ -19,9 +21,13 @@ public extension SerenadaCoreDelegate {
     func sessionDidEnd(_ session: SerenadaSession, reason: EndReason) {}
 }
 
+/// Result of creating a new room.
 public struct CreateRoomResult {
+    /// Full URL for the created room.
     public let url: URL
+    /// Room identifier.
     public let roomId: String
+    /// The session that was created and joined.
     public let session: SerenadaSession
 
     public init(url: URL, roomId: String, session: SerenadaSession) {
@@ -31,18 +37,24 @@ public struct CreateRoomResult {
     }
 }
 
+/// Main entry point for the Serenada SDK. Create an instance with ``SerenadaConfig``, then use ``join(url:)`` or ``createRoom()`` to start a call.
 @MainActor
 public final class SerenadaCore {
+    /// SDK version string.
     public static let version = "0.1.0"
 
+    /// SDK configuration.
     public let config: SerenadaConfig
+    /// Delegate for session lifecycle callbacks.
     public weak var delegate: SerenadaCoreDelegate?
+    /// Optional logger for SDK diagnostics.
     public var logger: SerenadaLogger?
 
     public init(config: SerenadaConfig) {
         self.config = config
     }
 
+    /// Join an existing call by URL. Returns a session that begins connecting immediately.
     public func join(url: URL) -> SerenadaSession {
         let roomId = DeepLinkParser.extractRoomId(from: url) ?? url.lastPathComponent
         let target = DeepLinkParser.parseTarget(from: url)
@@ -60,6 +72,7 @@ public final class SerenadaCore {
         return session
     }
 
+    /// Join an existing call by room ID. Returns a session that begins connecting immediately.
     public func join(roomId: String) -> SerenadaSession {
         let url = buildRoomURL(host: config.serverHost, roomId: roomId)
 
@@ -74,6 +87,7 @@ public final class SerenadaCore {
         return session
     }
 
+    /// Create a new room and immediately join it.
     public func createRoom() async throws -> CreateRoomResult {
         let apiClient = CoreAPIClient()
         let serverHost = config.serverHost

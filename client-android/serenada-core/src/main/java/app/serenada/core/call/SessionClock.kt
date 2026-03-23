@@ -1,5 +1,5 @@
 package app.serenada.core.call
 
-interface SessionClock {
+internal interface SessionClock {
     fun nowMs(): Long
 }

@@ -22,6 +22,10 @@ interface TurnCredentialsResponse {
     uris?: string[];
 }
 
+/**
+ * Pre-flight diagnostics utility. Checks device capabilities (camera, mic, speaker)
+ * and server connectivity (signaling, TURN) before joining a call.
+ */
 export class SerenadaDiagnostics {
     private config: SerenadaConfig;
 
@@ -29,6 +33,7 @@ export class SerenadaDiagnostics {
         this.config = config;
     }
 
+    /** Run all diagnostic checks and return a full report. */
     async runAll(): Promise<DiagnosticsReport> {
         const [devices, network, signaling, turn] = await Promise.all([
             this.enumerateDevices(),
@@ -42,6 +47,7 @@ export class SerenadaDiagnostics {
         return { camera, microphone, speaker, network, signaling, turn, devices };
     }
 
+    /** Test server connectivity: room API, WebSocket, SSE, and TURN credentials. */
     async runConnectivityChecks(): Promise<ConnectivityReport> {
         // Fetch the diagnostic token once and reuse it for the TURN credentials check.
         let tokenForTurn: string | undefined;
@@ -68,6 +74,7 @@ export class SerenadaDiagnostics {
         return { roomApi, webSocket, sse, diagnosticToken, turnCredentials };
     }
 
+    /** Probe ICE connectivity (STUN/TURN) by gathering candidates with a real peer connection. */
     async runIceProbe(turnsOnly: boolean, onCandidateLog?: (candidate: string) => void): Promise<IceProbeReport> {
         try {
             const token = await this.fetchDiagnosticToken();
@@ -82,6 +89,7 @@ export class SerenadaDiagnostics {
         }
     }
 
+    /** Validate that a server host is reachable by requesting a room ID. */
     async validateServerHost(host: string = this.config.serverHost): Promise<void> {
         const response = await this.fetchJson<RoomIdResponse>(buildApiUrl(host, '/api/room-id'), {
             method: 'GET',
@@ -92,21 +100,25 @@ export class SerenadaDiagnostics {
         }
     }
 
+    /** Check if a camera is available and authorized. */
     async checkCamera(): Promise<DiagnosticCheckResult> {
         const devices = await this.enumerateDevices();
         return this.checkMediaCapability(devices, 'videoinput', 'No camera found');
     }
 
+    /** Check if a microphone is available and authorized. */
     async checkMicrophone(): Promise<DiagnosticCheckResult> {
         const devices = await this.enumerateDevices();
         return this.checkMediaCapability(devices, 'audioinput', 'No microphone found');
     }
 
+    /** Check if a speaker/audio output device is available. */
     async checkSpeaker(): Promise<DiagnosticCheckResult> {
         const devices = await this.enumerateDevices();
         return this.checkDeviceAvailability(devices, 'audiooutput', 'No speaker found');
     }
 
+    /** Check if the browser reports network connectivity. */
     async checkNetwork(): Promise<DiagnosticCheckResult> {
         try {
             if (!navigator.onLine) return { status: 'unavailable', reason: 'Browser reports offline' };
@@ -116,6 +128,7 @@ export class SerenadaDiagnostics {
         }
     }
 
+    /** Check if the signaling server is reachable. */
     async checkSignaling(): Promise<DiagnosticCheckResult & { transport?: string }> {
         try {
             const controller = new AbortController();
@@ -134,6 +147,7 @@ export class SerenadaDiagnostics {
         }
     }
 
+    /** Check if the TURN relay endpoint is reachable. */
     async checkTurn(): Promise<DiagnosticCheckResult & { latencyMs?: number }> {
         try {
             const start = Date.now();

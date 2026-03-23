@@ -5,7 +5,7 @@ import app.serenada.core.CallDiagnostics
 import app.serenada.core.IceConnectionState
 import app.serenada.core.PeerConnectionState
 
-class ConnectionStatusTracker(
+internal class ConnectionStatusTracker(
     private val handler: Handler,
     private val getPhase: () -> CallPhase,
     private val getDiagnostics: () -> CallDiagnostics,

@@ -2,7 +2,7 @@ import Foundation
 
 /// Canonical WebRTC resilience constants shared across all Serenada clients.
 /// Run `node scripts/check-resilience-constants.mjs` to verify cross-platform parity.
-public enum WebRtcResilience {
+package enum WebRtcResilience {
 
     // MARK: - Signaling
 

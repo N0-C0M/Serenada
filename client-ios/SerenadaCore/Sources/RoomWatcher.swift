@@ -1,5 +1,6 @@
 import Foundation
 
+/// Room occupancy info (participant count and max capacity).
 public struct RoomOccupancy: Equatable {
     public let count: Int
     public let maxParticipants: Int?
@@ -10,13 +11,16 @@ public struct RoomOccupancy: Equatable {
     }
 }
 
+/// Callback for room occupancy status changes.
 @MainActor
 public protocol RoomWatcherDelegate: AnyObject {
     func roomWatcher(_ watcher: RoomWatcher, didUpdateStatuses statuses: [String: RoomOccupancy])
 }
 
+/// Monitors room occupancy via signaling. Use to display room status before joining.
 @MainActor
 public final class RoomWatcher {
+    /// Delegate notified when room occupancy changes.
     public weak var delegate: RoomWatcherDelegate?
 
     private let signalingClient: SignalingClient
@@ -31,10 +35,12 @@ public final class RoomWatcher {
         self.signalingClient.listener = self
     }
 
+    /// Current occupancy statuses keyed by room ID.
     public var currentStatuses: [String: RoomOccupancy] {
         statuses
     }
 
+    /// Start watching the given room IDs for occupancy changes.
     public func watchRooms(roomIds: [String], host: String) {
         self.host = host
         watchedRoomIds = roomIds
@@ -59,6 +65,7 @@ public final class RoomWatcher {
         }
     }
 
+    /// Stop watching all rooms and disconnect.
     public func stop() {
         reconnectTask?.cancel()
         reconnectTask = nil

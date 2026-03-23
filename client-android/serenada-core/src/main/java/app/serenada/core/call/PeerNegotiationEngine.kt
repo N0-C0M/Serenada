@@ -11,7 +11,7 @@ import org.webrtc.PeerConnection
 import org.webrtc.SessionDescription
 import org.json.JSONObject
 
-class PeerNegotiationEngine(
+internal class PeerNegotiationEngine(
     private val handler: Handler,
     private val clock: SessionClock,
     // State readers

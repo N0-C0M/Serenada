@@ -10,7 +10,7 @@ import org.json.JSONObject
  *
  * Follows the closure-injection DI pattern established by [PeerNegotiationEngine].
  */
-class SignalingMessageRouter(
+internal class SignalingMessageRouter(
     // State readers
     private val getClientId: () -> String?,
     private val getHostCid: () -> String?,

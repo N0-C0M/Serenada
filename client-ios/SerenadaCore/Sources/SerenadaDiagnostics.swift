@@ -6,6 +6,7 @@ import WebRTC
 
 // MARK: - Report types
 
+/// Result of a single device or capability check.
 public enum DiagnosticCheckResult: Equatable {
     case available
     case unavailable(reason: String)
@@ -13,18 +14,21 @@ public enum DiagnosticCheckResult: Equatable {
     case skipped(reason: String)
 }
 
+/// Result of a signaling server connectivity check.
 public enum SignalingCheckResult: Equatable {
     case connected(transport: String)
     case failed(reason: String)
     case skipped(reason: String)
 }
 
+/// Result of a TURN server reachability check.
 public enum TurnCheckResult: Equatable {
     case reachable(latencyMs: Int)
     case unreachable(reason: String)
     case skipped(reason: String)
 }
 
+/// Information about a detected media device (camera or microphone).
 public struct DeviceInfo: Equatable {
     public let id: String
     public let name: String
@@ -37,6 +41,7 @@ public struct DeviceInfo: Equatable {
     }
 }
 
+/// Full diagnostic report covering device capabilities and server connectivity.
 public struct DiagnosticsReport: Equatable {
     public var camera: DiagnosticCheckResult = .skipped(reason: "not run")
     public var microphone: DiagnosticCheckResult = .skipped(reason: "not run")
@@ -49,12 +54,14 @@ public struct DiagnosticsReport: Equatable {
     public init() {}
 }
 
+/// Outcome of a timed connectivity check (not run, passed with latency, or failed).
 public enum CheckOutcome: Equatable {
     case notRun
     case passed(latencyMs: Int)
     case failed(error: String)
 }
 
+/// Results of server connectivity checks (room API, WebSocket, SSE, TURN).
 public struct ConnectivityReport: Equatable {
     public var roomApi: CheckOutcome = .notRun
     public var webSocket: CheckOutcome = .notRun
@@ -65,6 +72,7 @@ public struct ConnectivityReport: Equatable {
     public init() {}
 }
 
+/// Results of an ICE candidate gathering probe (STUN and TURN connectivity).
 public struct IceProbeReport: Equatable {
     public let stunPassed: Bool
     public let turnPassed: Bool
@@ -79,6 +87,7 @@ public struct IceProbeReport: Equatable {
 
 // MARK: - SerenadaDiagnostics
 
+/// Pre-flight diagnostics utility. Checks device capabilities and server connectivity.
 @MainActor
 public final class SerenadaDiagnostics {
     private let config: SerenadaConfig
@@ -96,6 +105,7 @@ public final class SerenadaDiagnostics {
 
     // MARK: - High-level reports
 
+    /// Run all diagnostic checks and return a full report via completion handler.
     public func runAll(completion: @escaping (DiagnosticsReport) -> Void) {
         Task {
             var report = DiagnosticsReport()
@@ -110,6 +120,7 @@ public final class SerenadaDiagnostics {
         }
     }
 
+    /// Test server connectivity (room API, WebSocket, SSE, TURN credentials).
     public func runConnectivityChecks() async -> ConnectivityReport {
         var report = ConnectivityReport()
         // Fetch the diagnostic token once and reuse it for the TURN credentials check.
@@ -130,6 +141,7 @@ public final class SerenadaDiagnostics {
         return report
     }
 
+    /// Probe ICE connectivity by gathering candidates against the configured TURN server.
     public func runIceProbe(turnsOnly: Bool, onCandidateLog: ((String) -> Void)? = nil) async -> IceProbeReport {
         do {
             let token = try await apiClient.fetchDiagnosticToken(host: config.serverHost)
@@ -141,32 +153,39 @@ public final class SerenadaDiagnostics {
         }
     }
 
+    /// Validate that the configured server host is reachable.
     public func validateServerHost() async throws {
         try await apiClient.validateServerHost(config.serverHost)
     }
 
     // MARK: - Individual checks
 
+    /// Check camera availability and authorization.
     public func checkCamera(completion: @escaping (DiagnosticCheckResult) -> Void) {
         completion(checkCameraSync())
     }
 
+    /// Check microphone availability and authorization.
     public func checkMicrophone(completion: @escaping (DiagnosticCheckResult) -> Void) {
         completion(checkMicrophoneSync())
     }
 
+    /// Check speaker/audio output availability.
     public func checkSpeaker(completion: @escaping (DiagnosticCheckResult) -> Void) {
         completion(checkSpeakerSync())
     }
 
+    /// Check network reachability to the server.
     public func checkNetwork(completion: @escaping (DiagnosticCheckResult) -> Void) {
         Task { completion(await checkNetworkAsync()) }
     }
 
+    /// Check signaling server connectivity.
     public func checkSignaling(completion: @escaping (SignalingCheckResult) -> Void) {
         Task { completion(await checkSignalingAsync()) }
     }
 
+    /// Check TURN server reachability.
     public func checkTurn(completion: @escaping (TurnCheckResult) -> Void) {
         Task { completion(await checkTurnAsync()) }
     }

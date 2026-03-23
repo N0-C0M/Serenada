@@ -9,7 +9,7 @@ import org.webrtc.SurfaceViewRenderer
 import org.webrtc.VideoSink
 import org.webrtc.VideoTrack
 
-interface SessionMediaEngine {
+internal interface SessionMediaEngine {
     fun startLocalMedia()
     fun release()
     fun toggleAudio(enabled: Boolean)
