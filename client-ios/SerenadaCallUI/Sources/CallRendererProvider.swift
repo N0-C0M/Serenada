@@ -8,4 +8,5 @@ protocol CallRendererProvider: AnyObject {
     func detachRemoteRenderer(_ renderer: AnyObject)
     func attachRemoteRenderer(_ renderer: AnyObject, forCid cid: String)
     func detachRemoteRenderer(_ renderer: AnyObject, forCid cid: String)
+    func setRemoteParticipantVolume(_ volume: Double, forCid cid: String)
 }

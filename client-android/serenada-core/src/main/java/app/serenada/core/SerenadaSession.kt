@@ -239,6 +239,7 @@ class SerenadaSession internal constructor(
     )
     private val pendingMessages = java.util.ArrayDeque<SignalingMessage>()
     private val peerSlots = mutableMapOf<String, PeerConnectionSlotProtocol>()
+    private val remoteParticipantVolumes = mutableMapOf<String, Double>()
     private val peerNegotiationEngine: PeerNegotiationEngine
     private var reconnectToken: String? = null
     private var cpuWakeLock: PowerManager.WakeLock? = null
@@ -562,6 +563,21 @@ class SerenadaSession internal constructor(
         peerSlots[cid]?.detachRemoteSink(sink)
     }
 
+    /**
+     * Set local playback volume for a specific remote participant audio track.
+     * The value is clamped to [0.0, 1.0] and affects only this device.
+     */
+    fun setRemoteParticipantVolume(cid: String, volume: Float) {
+        assertMainThread()
+        val normalized = volume.coerceIn(0f, 1f).toDouble()
+        if (normalized == 1.0) {
+            remoteParticipantVolumes.remove(cid)
+        } else {
+            remoteParticipantVolumes[cid] = normalized
+        }
+        peerSlots[cid]?.setRemoteAudioVolume(normalized)
+    }
+
     /** Get the EGL context for custom rendering or renderer initialization. */
     fun eglContext(): org.webrtc.EglBase.Context {
         assertMainThread()
@@ -745,6 +761,7 @@ class SerenadaSession internal constructor(
         )
 
         peerNegotiationEngine.syncPeers(roomState)
+        applyStoredRemoteParticipantVolumes()
         refreshRemoteParticipants()
         updateConnectionStatusFromSignals()
     }
@@ -760,6 +777,7 @@ class SerenadaSession internal constructor(
         val currentState = _state.value
         val currentDiagnostics = _diagnostics.value
         val activeCids = remoteParticipants.map { it.cid }.toSet()
+        remoteParticipantVolumes.keys.retainAll(activeCids)
         val clearContent = currentDiagnostics.remoteContentCid != null && currentDiagnostics.remoteContentCid !in activeCids
         if (currentState.remoteParticipants == remoteParticipants) {
             if (clearContent) {
@@ -770,6 +788,12 @@ class SerenadaSession internal constructor(
         updateState(currentState.copy(remoteParticipants = remoteParticipants))
         if (clearContent) {
             updateDiagnostics(currentDiagnostics.copy(remoteContentCid = null, remoteContentType = null))
+        }
+    }
+
+    private fun applyStoredRemoteParticipantVolumes() {
+        peerSlots.forEach { (cid, slot) ->
+            slot.setRemoteAudioVolume(remoteParticipantVolumes[cid] ?: 1.0)
         }
     }
 
@@ -822,6 +846,7 @@ class SerenadaSession internal constructor(
         signalingClient.close()
         peerSlots.values.forEach { it.closePeerConnection() }
         peerSlots.clear()
+        remoteParticipantVolumes.clear()
         webRtcEngine.release()
         webRtcStatsExecutor?.shutdown()
         webRtcStatsExecutor = null

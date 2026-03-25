@@ -59,6 +59,7 @@ internal protocol PeerConnectionSlotProtocol: AnyObject {
     // Renderer management
     func attachRemoteRenderer(_ renderer: AnyObject)
     func detachRemoteRenderer(_ renderer: AnyObject)
+    func setRemoteAudioVolume(_ volume: Double)
 
     // Stats
     func collectRealtimeCallStats(onComplete: @escaping (RealtimeCallStats) -> Void)

@@ -139,6 +139,7 @@ internal fun CallScreen(
     detachRemoteSinkForCid: (String, VideoSink) -> Unit,
     attachRemoteSink: (VideoSink) -> Unit,
     detachRemoteSink: (VideoSink) -> Unit,
+    onSetRemoteParticipantVolume: (String, Float) -> Unit,
     onRemoteVideoFitChanged: ((Boolean) -> Unit)? = null,
     onShareLink: (() -> Unit)? = null,
 ) {
@@ -160,6 +161,7 @@ internal fun CallScreen(
     var localAspectRatio by remember { mutableStateOf<Float?>(null) }
     var remoteAspectRatio by remember { mutableStateOf<Float?>(null) }
     val remoteTileAspectRatios = remember { mutableStateMapOf<String, Float>() }
+    val remoteParticipantVolumes = remember { mutableStateMapOf<String, Float>() }
     var pinnedParticipantId by rememberSaveable { mutableStateOf<String?>(null) }
     var showDebug by rememberSaveable { mutableStateOf(false) }
     var debugTapTimestampMs by remember { mutableStateOf(0L) }
@@ -235,6 +237,9 @@ internal fun CallScreen(
         remoteTileAspectRatios.keys
             .filter { it !in activeCids }
             .forEach { remoteTileAspectRatios.remove(it) }
+        remoteParticipantVolumes.keys
+            .filter { it !in activeCids }
+            .forEach { remoteParticipantVolumes.remove(it) }
         // Auto-unpin if pinned participant left (but not if local is pinned)
         if (pinnedParticipantId != null && pinnedParticipantId != uiState.localCid && pinnedParticipantId !in activeCids) {
             pinnedParticipantId = null
@@ -724,6 +729,19 @@ internal fun CallScreen(
                         .padding(bottom = 48.dp, top = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                if (uiState.remoteParticipants.isNotEmpty()) {
+                    ParticipantVolumePanel(
+                        remoteParticipants = uiState.remoteParticipants,
+                        participantVolumes = remoteParticipantVolumes,
+                        strings = strings,
+                        onVolumeChanged = { cid, volume ->
+                            remoteParticipantVolumes[cid] = volume
+                            onSetRemoteParticipantVolume(cid, volume)
+                        },
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                }
+
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(20.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -1189,6 +1207,71 @@ private fun worstStatus(vararg statuses: DebugStatus): DebugStatus {
     if (concreteStatuses.contains(DebugStatus.BAD)) return DebugStatus.BAD
     if (concreteStatuses.contains(DebugStatus.WARN)) return DebugStatus.WARN
     return DebugStatus.GOOD
+}
+
+@Composable
+private fun ParticipantVolumePanel(
+    remoteParticipants: List<RemoteParticipant>,
+    participantVolumes: MutableMap<String, Float>,
+    strings: Map<SerenadaString, String>?,
+    onVolumeChanged: (String, Float) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        color = Color.Black.copy(alpha = 0.5f),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = resolveString(SerenadaString.CallParticipantVolume, strings),
+                color = Color.White.copy(alpha = 0.86f),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            remoteParticipants.forEachIndexed { index, participant ->
+                val currentVolume = (participantVolumes[participant.cid] ?: 1f).coerceIn(0f, 1f)
+                val percent = (currentVolume * 100f).roundToInt()
+                val remoteLabel = "${resolveString(SerenadaString.CallRemoteParticipant, strings)} ${index + 1}"
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = remoteLabel,
+                        color = Color.White.copy(alpha = 0.92f),
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                    )
+                    Icon(
+                        imageVector = Icons.Default.VolumeUp,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.75f),
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Slider(
+                        value = currentVolume,
+                        onValueChange = { newValue ->
+                            onVolumeChanged(participant.cid, newValue.coerceIn(0f, 1f))
+                        },
+                        valueRange = 0f..1f,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = "$percent%",
+                        color = Color.White.copy(alpha = 0.75f),
+                        fontSize = 12.sp,
+                        modifier = Modifier.width(38.dp),
+                        textAlign = TextAlign.End,
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable

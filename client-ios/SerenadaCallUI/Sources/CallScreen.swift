@@ -262,6 +262,7 @@ struct CallScreenView: View {
     @State private var lastDebugTapAt: Date?
     @State private var lastMagnificationValue: CGFloat = 1
     @State private var showRecoveringBadge = false
+    @State private var remoteParticipantVolumes: [String: Double] = [:]
     @State private var remoteTileAspectRatios: [String: CGFloat] = [:]
     @State private var pinnedParticipantId: String?
 
@@ -390,6 +391,7 @@ struct CallScreenView: View {
         .onChange(of: uiState.remoteParticipants.map(\.cid)) { remoteCids in
             let active = Set(remoteCids)
             remoteTileAspectRatios = remoteTileAspectRatios.filter { active.contains($0.key) }
+            remoteParticipantVolumes = remoteParticipantVolumes.filter { active.contains($0.key) }
             if let pinned = pinnedParticipantId, pinned != uiState.localCid, !active.contains(pinned) {
                 pinnedParticipantId = nil
             }
@@ -564,6 +566,10 @@ struct CallScreenView: View {
                 Spacer()
 
                 if areControlsVisible {
+                    if !uiState.remoteParticipants.isEmpty {
+                        participantVolumePanel
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
                     controlBar
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
@@ -694,6 +700,55 @@ struct CallScreenView: View {
         .padding(.horizontal, 16)
         .padding(.top, 16)
         .opacity(uiState.phase == .waiting ? 1 : (areControlsVisible ? 1 : 0))
+    }
+
+    private var participantVolumePanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(str(.callParticipantVolume))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.white.opacity(0.92))
+
+            ForEach(Array(uiState.remoteParticipants.enumerated()), id: \.element.cid) { index, participant in
+                let label = "\(str(.callRemoteParticipant)) \(index + 1)"
+                let binding = Binding<Double>(
+                    get: {
+                        remoteParticipantVolumes[participant.cid] ?? 1
+                    },
+                    set: { newValue in
+                        let normalized = min(1, max(0, newValue))
+                        if abs(normalized - 1) < 0.0001 {
+                            remoteParticipantVolumes.removeValue(forKey: participant.cid)
+                        } else {
+                            remoteParticipantVolumes[participant.cid] = normalized
+                        }
+                        rendererProvider.setRemoteParticipantVolume(normalized, forCid: participant.cid)
+                    }
+                )
+                HStack(spacing: 8) {
+                    Text(label)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(Color.white.opacity(0.9))
+                        .lineLimit(1)
+
+                    Image(systemName: "speaker.wave.2.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.white.opacity(0.75))
+
+                    Slider(value: binding, in: 0 ... 1)
+
+                    Text("\(Int((binding.wrappedValue * 100).rounded()))%")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(Color.white.opacity(0.78))
+                        .frame(width: 40, alignment: .trailing)
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(Color.black.opacity(0.46))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal, 18)
+        .padding(.bottom, 10)
     }
 
     private var controlBar: some View {

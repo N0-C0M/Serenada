@@ -159,6 +159,7 @@ fun SerenadaCallFlow(
         detachRemoteSinkForCid = { cid, sink -> activeSession.detachRemoteSinkForCid(cid, sink) },
         attachRemoteSink = { sink -> activeSession.attachRemoteSink(sink) },
         detachRemoteSink = { sink -> activeSession.detachRemoteSink(sink) },
+        onSetRemoteParticipantVolume = { cid, volume -> activeSession.setRemoteParticipantVolume(cid, volume) },
         onDismiss = onDismiss,
     )
 }
@@ -197,6 +198,7 @@ fun SerenadaCallFlow(
     detachRemoteSinkForCid: (String, VideoSink) -> Unit,
     attachRemoteSink: (VideoSink) -> Unit,
     detachRemoteSink: (VideoSink) -> Unit,
+    onSetRemoteParticipantVolume: (String, Float) -> Unit = { _, _ -> },
     onDismiss: () -> Unit = {},
 ) {
     CallScreen(
@@ -229,6 +231,7 @@ fun SerenadaCallFlow(
         detachRemoteSinkForCid = detachRemoteSinkForCid,
         attachRemoteSink = attachRemoteSink,
         detachRemoteSink = detachRemoteSink,
+        onSetRemoteParticipantVolume = onSetRemoteParticipantVolume,
     )
 }
 

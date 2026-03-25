@@ -120,7 +120,9 @@ internal class PeerConnectionSlot(
     override fun incrementNonHostFallbackAttempts() { nonHostFallbackAttempts++ }
 
     private var peerConnection: PeerConnection? = null
+    private var remoteAudioTrack: AudioTrack? = null
     private var remoteVideoTrack: VideoTrack? = null
+    private var remoteAudioVolume: Double = DEFAULT_REMOTE_AUDIO_VOLUME
     private var remoteDescriptionSet = false
     private val pendingIceCandidates = mutableListOf<IceCandidate>()
     private val remoteSinks = LinkedHashSet<VideoSink>()
@@ -165,6 +167,10 @@ internal class PeerConnectionSlot(
 
             override fun onTrack(transceiver: RtpTransceiver?) {
                 val track = transceiver?.receiver?.track()
+                if (track is AudioTrack) {
+                    remoteAudioTrack = track
+                    track.setVolume(remoteAudioVolume)
+                }
                 if (track is VideoTrack) {
                     remoteVideoTrack?.removeSink(remoteVideoStateSink)
                     remoteSinks.forEach { sink -> remoteVideoTrack?.removeSink(sink) }
@@ -234,6 +240,7 @@ internal class PeerConnectionSlot(
         remoteVideoTrack?.removeSink(remoteVideoStateSink)
         remoteSinks.forEach { sink -> remoteVideoTrack?.removeSink(sink) }
         remoteSinks.clear()
+        remoteAudioTrack = null
         remoteVideoTrack = null
         remoteBlackFrameAnalyzer.onTrackDetached()
         remoteDescriptionSet = false
@@ -403,6 +410,11 @@ internal class PeerConnectionSlot(
         remoteSinks.remove(sink)
     }
 
+    override fun setRemoteAudioVolume(volume: Double) {
+        remoteAudioVolume = volume.coerceIn(0.0, 1.0)
+        remoteAudioTrack?.setVolume(remoteAudioVolume)
+    }
+
     override fun collectWebRtcStats(onComplete: (String, RealtimeCallStats?) -> Unit) {
         val pc = peerConnection
         if (pc == null) {
@@ -466,6 +478,10 @@ internal class PeerConnectionSlot(
                 RtpTransceiver.RtpTransceiverInit(RtpTransceiver.RtpTransceiverDirection.RECV_ONLY)
             )
         }
+    }
+
+    private companion object {
+        const val DEFAULT_REMOTE_AUDIO_VOLUME = 1.0
     }
 
     private fun flushPendingIceCandidates() {

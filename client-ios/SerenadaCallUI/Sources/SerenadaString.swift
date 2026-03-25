@@ -27,6 +27,8 @@ public enum SerenadaString: String, CaseIterable {
     case callA11yShareInvite
     case callA11yVideoFit
     case callA11yVideoFill
+    case callParticipantVolume
+    case callRemoteParticipant
     case callErrorGeneric
     case callJoining
     case callEnded
@@ -61,6 +63,8 @@ public let serenadaDefaultStrings: [SerenadaString: String] = [
     .callA11yShareInvite: "Share invite",
     .callA11yVideoFit: "Fit video",
     .callA11yVideoFill: "Fill video",
+    .callParticipantVolume: "Volume",
+    .callRemoteParticipant: "Remote",
     .callErrorGeneric: "Something went wrong",
     .callJoining: "Joining...",
     .callEnded: "Call ended",

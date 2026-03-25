@@ -364,4 +364,8 @@ extension SerenadaSession: CallRendererProvider {
     public func detachRemoteRenderer(_ renderer: AnyObject, forCid cid: String) {
         detachRemoteRenderer(renderer, forParticipant: cid)
     }
+
+    public func setRemoteParticipantVolume(_ volume: Double, forCid cid: String) {
+        setRemoteParticipantVolume(volume, forParticipant: cid)
+    }
 }

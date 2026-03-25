@@ -14,6 +14,8 @@ enum class SerenadaString {
     CallQrCode,
     CallToggleFlashlight,
     CallToggleVideoFit,
+    CallParticipantVolume,
+    CallRemoteParticipant,
 }
 
 val serenadaDefaultStrings: Map<SerenadaString, String> = mapOf(
@@ -30,6 +32,8 @@ val serenadaDefaultStrings: Map<SerenadaString, String> = mapOf(
     SerenadaString.CallQrCode to "QR code",
     SerenadaString.CallToggleFlashlight to "Toggle flashlight",
     SerenadaString.CallToggleVideoFit to "Toggle video fit",
+    SerenadaString.CallParticipantVolume to "Volume",
+    SerenadaString.CallRemoteParticipant to "Remote",
 )
 
 fun resolveString(key: SerenadaString, overrides: Map<SerenadaString, String>?): String {

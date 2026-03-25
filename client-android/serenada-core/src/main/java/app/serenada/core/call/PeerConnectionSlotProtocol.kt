@@ -72,6 +72,7 @@ internal interface PeerConnectionSlotProtocol {
     fun detachRemoteRenderer(renderer: SurfaceViewRenderer)
     fun attachRemoteSink(sink: VideoSink)
     fun detachRemoteSink(sink: VideoSink)
+    fun setRemoteAudioVolume(volume: Double)
     fun collectWebRtcStats(onComplete: (String, RealtimeCallStats?) -> Unit)
     fun applyVideoSenderParameters(policy: WebRtcEngine.VideoSenderPolicy)
 }

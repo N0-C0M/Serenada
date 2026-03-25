@@ -80,6 +80,7 @@ public final class SerenadaSession: ObservableObject {
     private var hostCid: String?
     private var currentRoomState: RoomState?
     private var peerSlots: [String: any PeerConnectionSlotProtocol] = [:]
+    private var remoteParticipantVolumes: [String: Double] = [:]
     private var pendingMessages: [SignalingMessage] = []
     private var pendingJoinRoom: String?
     private var joinAttemptSerial: Int64 = 0
@@ -282,6 +283,18 @@ public final class SerenadaSession: ObservableObject {
     public func attachRemoteRenderer(_ renderer: AnyObject, forParticipant cid: String) { peerSlots[cid]?.attachRemoteRenderer(renderer) }
     public func detachRemoteRenderer(_ renderer: AnyObject, forParticipant cid: String) { peerSlots[cid]?.detachRemoteRenderer(renderer) }
 
+    /// Set local playback volume for a specific remote participant audio track.
+    /// Volume is clamped to [0, 1] and affects only this device.
+    public func setRemoteParticipantVolume(_ volume: Double, forParticipant cid: String) {
+        let normalized = min(1, max(0, volume))
+        if normalized == 1 {
+            remoteParticipantVolumes.removeValue(forKey: cid)
+        } else {
+            remoteParticipantVolumes[cid] = normalized
+        }
+        peerSlots[cid]?.setRemoteAudioVolume(normalized)
+    }
+
     // MARK: - Join Flow
 
     private func beginJoinIfNeeded() async {
@@ -443,6 +456,7 @@ public final class SerenadaSession: ObservableObject {
         commitSnapshot { s, _ in s.localParticipant.isHost = self.clientId != nil && self.clientId == roomState.hostCid }
 
         peerNegotiationEngine?.syncPeers(roomState: roomState)
+        applyStoredRemoteParticipantVolumes()
         refreshRemoteParticipants()
         connectionStatusTracker?.update()
     }
@@ -461,10 +475,17 @@ public final class SerenadaSession: ObservableObject {
             )
         }
         let activeCids = Set(participants.map(\.cid))
+        remoteParticipantVolumes = remoteParticipantVolumes.filter { activeCids.contains($0.key) }
         let clearContent = diagnostics.remoteContentParticipantId != nil && !activeCids.contains(diagnostics.remoteContentParticipantId!)
         commitSnapshot { s, d in
             s.remoteParticipants = participants
             if clearContent { d.remoteContentParticipantId = nil; d.remoteContentType = nil }
+        }
+    }
+
+    private func applyStoredRemoteParticipantVolumes() {
+        for (cid, slot) in peerSlots {
+            slot.setRemoteAudioVolume(remoteParticipantVolumes[cid] ?? 1)
         }
     }
 
@@ -530,6 +551,7 @@ public final class SerenadaSession: ObservableObject {
         signalingClient.close()
         peerSlots.values.forEach { $0.closePeerConnection() }
         peerSlots.removeAll()
+        remoteParticipantVolumes.removeAll()
         webRtcEngine.release()
         callAudioSessionController.deactivate()
 

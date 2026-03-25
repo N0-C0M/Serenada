@@ -18,4 +18,6 @@ fun buildSerenadaCallStrings(context: Context): Map<SerenadaString, String> = ma
     SerenadaString.CallQrCode to context.getString(R.string.call_qr_code),
     SerenadaString.CallToggleFlashlight to context.getString(R.string.call_toggle_flashlight),
     SerenadaString.CallToggleVideoFit to context.getString(R.string.call_toggle_video_fit),
+    SerenadaString.CallParticipantVolume to context.getString(R.string.call_participant_volume),
+    SerenadaString.CallRemoteParticipant to context.getString(R.string.call_remote_participant),
 )

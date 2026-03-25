@@ -179,6 +179,7 @@ final class FakePeerConnectionSlot: PeerConnectionSlotProtocol {
 
     func attachRemoteRenderer(_ renderer: AnyObject) {}
     func detachRemoteRenderer(_ renderer: AnyObject) {}
+    func setRemoteAudioVolume(_ volume: Double) {}
 
     // MARK: - Stats
 

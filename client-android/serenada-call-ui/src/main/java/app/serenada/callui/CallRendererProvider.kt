@@ -9,4 +9,5 @@ interface CallRendererProvider {
     fun detachRemoteRenderer(renderer: SurfaceViewRenderer)
     fun attachRemoteRenderer(renderer: SurfaceViewRenderer, cid: String)
     fun detachRemoteRenderer(renderer: SurfaceViewRenderer, cid: String)
+    fun setRemoteParticipantVolume(cid: String, volume: Float)
 }

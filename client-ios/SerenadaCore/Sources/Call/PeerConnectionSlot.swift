@@ -142,7 +142,9 @@ internal final class PeerConnectionSlot: PeerConnectionSlotProtocol {
 
     private var peerConnection: RTCPeerConnection?
     private var observerProxy: SlotPeerConnectionObserverProxy?
+    private var remoteAudioTrack: RTCAudioTrack?
     private var remoteVideoTrack: RTCVideoTrack?
+    private var remoteAudioVolume: Double = 1
     private var pendingRemoteIceCandidates: [IceCandidatePayload] = []
     private var remoteRenderers: [WeakRendererBox] = []
     private var lastRealtimeStatsSample: RealtimeStatsSample?
@@ -245,6 +247,13 @@ internal final class PeerConnectionSlot: PeerConnectionSlotProtocol {
                     self.onRenegotiationNeeded(self.remoteCid)
                 }
             },
+            onRemoteAudioTrack: { [weak self] track in
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.remoteAudioTrack = track
+                    self.applyRemoteAudioVolume()
+                }
+            },
             onRemoteVideoTrack: { [weak self] track in
                 Task { @MainActor in
                     guard let self else { return }
@@ -305,6 +314,7 @@ internal final class PeerConnectionSlot: PeerConnectionSlotProtocol {
         peerConnection?.close()
         peerConnection = nil
         observerProxy = nil
+        remoteAudioTrack = nil
         remoteVideoTrack = nil
         pendingRemoteIceCandidates.removeAll()
         remoteRenderers.removeAll()
@@ -484,6 +494,13 @@ internal final class PeerConnectionSlot: PeerConnectionSlotProtocol {
 #endif
     }
 
+    public func setRemoteAudioVolume(_ volume: Double) {
+#if canImport(WebRTC)
+        remoteAudioVolume = normalizeRemoteAudioVolume(volume)
+        applyRemoteAudioVolume()
+#endif
+    }
+
     public func collectRealtimeCallStats(onComplete: @escaping (RealtimeCallStats) -> Void) {
 #if canImport(WebRTC)
         guard let peerConnection else {
@@ -635,6 +652,14 @@ private extension PeerConnectionSlot {
 
     private func compactRenderers() {
         remoteRenderers.removeAll { $0.value == nil }
+    }
+
+    private func normalizeRemoteAudioVolume(_ volume: Double) -> Double {
+        min(1, max(0, volume))
+    }
+
+    private func applyRemoteAudioVolume() {
+        remoteAudioTrack?.source.volume = remoteAudioVolume
     }
 
     private func buildRealtimeCallStats(_ report: RTCStatisticsReport) -> RealtimeCallStats {
@@ -894,6 +919,7 @@ private final class SlotPeerConnectionObserverProxy: NSObject, RTCPeerConnection
     private let onIceConnectionState: (RTCIceConnectionState) -> Void
     private let onSignalingState: (RTCSignalingState) -> Void
     private let onRenegotiationNeeded: () -> Void
+    private let onRemoteAudioTrack: (RTCAudioTrack?) -> Void
     private let onRemoteVideoTrack: (RTCVideoTrack?) -> Void
 
     init(
@@ -902,6 +928,7 @@ private final class SlotPeerConnectionObserverProxy: NSObject, RTCPeerConnection
         onIceConnectionState: @escaping (RTCIceConnectionState) -> Void,
         onSignalingState: @escaping (RTCSignalingState) -> Void,
         onRenegotiationNeeded: @escaping () -> Void,
+        onRemoteAudioTrack: @escaping (RTCAudioTrack?) -> Void,
         onRemoteVideoTrack: @escaping (RTCVideoTrack?) -> Void
     ) {
         self.onIceCandidate = onIceCandidate
@@ -909,6 +936,7 @@ private final class SlotPeerConnectionObserverProxy: NSObject, RTCPeerConnection
         self.onIceConnectionState = onIceConnectionState
         self.onSignalingState = onSignalingState
         self.onRenegotiationNeeded = onRenegotiationNeeded
+        self.onRemoteAudioTrack = onRemoteAudioTrack
         self.onRemoteVideoTrack = onRemoteVideoTrack
     }
 
@@ -917,10 +945,12 @@ private final class SlotPeerConnectionObserverProxy: NSObject, RTCPeerConnection
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {
+        onRemoteAudioTrack(stream.audioTracks.first)
         onRemoteVideoTrack(stream.videoTracks.first)
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {
+        onRemoteAudioTrack(nil)
         onRemoteVideoTrack(nil)
     }
 
@@ -941,6 +971,9 @@ private final class SlotPeerConnectionObserverProxy: NSObject, RTCPeerConnection
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didAdd rtpReceiver: RTCRtpReceiver, streams: [RTCMediaStream]) {
+        if let track = rtpReceiver.track as? RTCAudioTrack {
+            onRemoteAudioTrack(track)
+        }
         if let track = rtpReceiver.track as? RTCVideoTrack {
             onRemoteVideoTrack(track)
         }
