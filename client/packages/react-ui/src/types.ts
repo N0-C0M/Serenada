@@ -43,6 +43,7 @@ export type SerenadaString =
     | 'grantPermissions'
     | 'cancel'
     | 'debugPanel'
+    | 'participantVolume'
     | 'you'
     | 'remote';
 
@@ -69,6 +70,7 @@ export const serenadaDefaultStrings: Record<SerenadaString, string> = {
     grantPermissions: 'Grant permissions',
     cancel: 'Cancel',
     debugPanel: 'Debug',
+    participantVolume: 'Volume',
     you: 'You',
     remote: 'Remote',
 };

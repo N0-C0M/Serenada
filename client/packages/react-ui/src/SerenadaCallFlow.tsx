@@ -11,6 +11,7 @@ import {
     RotateCcw,
     ScreenShare,
     ScreenShareOff,
+    Volume2,
     Video,
     VideoOff,
 } from 'lucide-react';
@@ -40,6 +41,12 @@ import {
     persistRemoteVideoFit,
     type RemoteVideoFit,
 } from './utils/remoteVideoFit.js';
+import {
+    DEFAULT_PARTICIPANT_VOLUME,
+    normalizeParticipantVolume,
+    parseParticipantVolumeInput,
+    participantVolumeToPercent,
+} from './utils/participantVolume.js';
 
 interface RemoteStageTile {
     cid: string;
@@ -71,6 +78,7 @@ const VideoTile: React.FC<{
     stream: MediaStream;
     label?: string;
     muted?: boolean;
+    volume?: number;
     mirrored?: boolean;
     pinned?: boolean;
     tileStyle?: React.CSSProperties;
@@ -81,6 +89,7 @@ const VideoTile: React.FC<{
     stream,
     label,
     muted = false,
+    volume = DEFAULT_PARTICIPANT_VOLUME,
     mirrored = false,
     pinned = false,
     tileStyle,
@@ -95,6 +104,11 @@ const VideoTile: React.FC<{
             videoRef.current.srcObject = stream;
         }
     }, [stream]);
+
+    useEffect(() => {
+        if (!videoRef.current) return;
+        videoRef.current.volume = normalizeParticipantVolume(volume);
+    }, [volume]);
 
     useEffect(() => {
         if (!onAspectRatioChange || !videoRef.current) return;
@@ -207,6 +221,7 @@ export const SerenadaCallFlow: React.FC<CallFlowProps> = ({
     const localStream = session?.localStream ?? null;
     const remoteStreams = session?.remoteStreams ?? EMPTY_STREAMS;
     const remoteStreamEntries = useMemo(() => Array.from(remoteStreams.entries()), [remoteStreams]);
+    const singleRemoteParticipantId = remoteStreamEntries.length === 1 ? remoteStreamEntries[0][0] : null;
     const remoteStream = remoteStreamEntries.length === 1 ? remoteStreamEntries[0][1] : null;
     const participantCount = (localParticipant ? 1 : 0) + effectiveState.remoteParticipants.length;
     const isMultiParty = remoteStreamEntries.length > 1;
@@ -232,6 +247,7 @@ export const SerenadaCallFlow: React.FC<CallFlowProps> = ({
     const [pinnedParticipantId, setPinnedParticipantId] = useState<string | null>(null);
     const [remoteContentState, setRemoteContentState] = useState<{ cid: string; contentType: ContentSource['type'] } | null>(null);
     const [remoteStageAspectRatios, setRemoteStageAspectRatios] = useState<Record<string, number>>({});
+    const [participantVolumes, setParticipantVolumes] = useState<Record<string, number>>({});
     const [stageViewportSize, setStageViewportSize] = useState(() => ({
         width: typeof window !== 'undefined' ? window.innerWidth : 0,
         height: typeof window !== 'undefined' ? window.innerHeight : 0,
@@ -407,6 +423,11 @@ export const SerenadaCallFlow: React.FC<CallFlowProps> = ({
             return nextEntries.length === Object.keys(prev).length ? prev : Object.fromEntries(nextEntries);
         });
 
+        setParticipantVolumes((prev) => {
+            const nextEntries = Object.entries(prev).filter(([cid]) => activeRemoteCids.has(cid));
+            return nextEntries.length === Object.keys(prev).length ? prev : Object.fromEntries(nextEntries);
+        });
+
         if (pinnedParticipantId && pinnedParticipantId !== localParticipant?.cid && !activeRemoteCids.has(pinnedParticipantId)) {
             setPinnedParticipantId(null);
         }
@@ -575,6 +596,37 @@ export const SerenadaCallFlow: React.FC<CallFlowProps> = ({
             return next;
         });
     }, [handleControlsInteraction]);
+
+    const getParticipantVolume = useCallback((cid: string | null) => {
+        if (!cid) return DEFAULT_PARTICIPANT_VOLUME;
+        return normalizeParticipantVolume(participantVolumes[cid] ?? DEFAULT_PARTICIPANT_VOLUME);
+    }, [participantVolumes]);
+
+    const handleParticipantVolumeChange = useCallback((cid: string, rawValue: string) => {
+        const nextVolume = parseParticipantVolumeInput(rawValue);
+        setParticipantVolumes((prev) => {
+            const currentVolume = normalizeParticipantVolume(prev[cid] ?? DEFAULT_PARTICIPANT_VOLUME);
+            if (currentVolume === nextVolume) return prev;
+
+            const next = { ...prev };
+            if (nextVolume === DEFAULT_PARTICIPANT_VOLUME) {
+                delete next[cid];
+            } else {
+                next[cid] = nextVolume;
+            }
+            return next;
+        });
+    }, []);
+
+    const remoteVolumeControls = useMemo(() => (
+        remoteStreamEntries.map(([cid], index) => ({
+            cid,
+            label: remoteStreamEntries.length > 1
+                ? `${resolveString('remote', strings)} ${index + 1}`
+                : resolveString('remote', strings),
+            percent: participantVolumeToPercent(getParticipantVolume(cid)),
+        }))
+    ), [getParticipantVolume, remoteStreamEntries, strings]);
 
     const remoteStageTiles = useMemo<RemoteStageTile[]>(() => (
         remoteStreamEntries.map(([cid, stream]) => ({
@@ -809,6 +861,38 @@ export const SerenadaCallFlow: React.FC<CallFlowProps> = ({
         </div>
     );
 
+    const participantVolumePanel = remoteVolumeControls.length > 0 && (
+        <div
+            className="participant-volume-panel"
+            onPointerDown={(event) => event.stopPropagation()}
+            onPointerUp={(event) => {
+                event.stopPropagation();
+                handleControlsInteraction();
+            }}
+        >
+            {remoteVolumeControls.map(({ cid, label, percent }) => (
+                <label key={cid} className="participant-volume-row" title={cid}>
+                    <span className="participant-volume-label">{label}</span>
+                    <Volume2 size={14} aria-hidden="true" />
+                    <input
+                        className="participant-volume-slider"
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={percent}
+                        aria-label={`${resolveString('participantVolume', strings)} ${label}`}
+                        onChange={(event) => {
+                            handleControlsInteraction();
+                            handleParticipantVolumeChange(cid, event.currentTarget.value);
+                        }}
+                    />
+                    <span className="participant-volume-value">{percent}%</span>
+                </label>
+            ))}
+        </div>
+    );
+
     const waitingOverlay = showWaiting && (
         <div className="waiting-message">
             <div>{resolveString('waitingForOther', strings)}</div>
@@ -856,6 +940,11 @@ export const SerenadaCallFlow: React.FC<CallFlowProps> = ({
                                         const isLocalContent = isContentTile && contentOwnerCid === localParticipant?.cid;
                                         const isRemoteContent = isContentTile && contentOwnerCid !== localParticipant?.cid;
                                         const isLocalPlaceholder = isLocalTile && contentOwnerCid === localParticipant?.cid && !isContentTile;
+                                        const volumeOwnerCid = isLocalContent || isLocalTile
+                                            ? null
+                                            : isRemoteContent
+                                                ? contentOwnerCid ?? null
+                                                : tile.id;
                                         const stream = isLocalContent || isLocalTile
                                             ? localStream
                                             : isRemoteContent
@@ -891,6 +980,7 @@ export const SerenadaCallFlow: React.FC<CallFlowProps> = ({
                                                     stream={stream}
                                                     tileStyle={{ width: '100%', height: '100%', borderRadius: 'inherit' }}
                                                     videoFit={tile.fit === 'contain' ? 'contain' : 'cover'}
+                                                    volume={volumeOwnerCid ? getParticipantVolume(volumeOwnerCid) : DEFAULT_PARTICIPANT_VOLUME}
                                                     onAspectRatioChange={
                                                         isLocalTile || isContentTile ? undefined : (ratio) => {
                                                             setRemoteStageAspectRatios((prev) => (
@@ -931,6 +1021,7 @@ export const SerenadaCallFlow: React.FC<CallFlowProps> = ({
                                                         key={tile.cid}
                                                         stream={stageTile.stream}
                                                         tileStyle={{ width: `${tile.width}px`, height: `${tile.height}px` }}
+                                                        volume={getParticipantVolume(tile.cid)}
                                                         onAspectRatioChange={(ratio) => {
                                                             setRemoteStageAspectRatios((prev) => (
                                                                 prev[tile.cid] === ratio ? prev : { ...prev, [tile.cid]: ratio }
@@ -971,6 +1062,7 @@ export const SerenadaCallFlow: React.FC<CallFlowProps> = ({
                         </div>
                     )}
                 </div>
+                {participantVolumePanel}
                 {controlsBar}
             </div>
         );
@@ -996,6 +1088,9 @@ export const SerenadaCallFlow: React.FC<CallFlowProps> = ({
                             ref={(node) => {
                                 if (node && node.srcObject !== remoteStream) {
                                     node.srcObject = remoteStream;
+                                }
+                                if (node) {
+                                    node.volume = getParticipantVolume(singleRemoteParticipantId);
                                 }
                             }}
                             className="video-remote"
@@ -1041,6 +1136,7 @@ export const SerenadaCallFlow: React.FC<CallFlowProps> = ({
                     )}
                 </div>
             </div>
+            {participantVolumePanel}
             {controlsBar}
         </div>
     );

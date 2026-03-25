@@ -248,6 +248,59 @@ const CALL_FLOW_CSS = `
   pointer-events: none;
 }
 
+[data-serenada-callflow] .participant-volume-panel {
+  position: absolute;
+  left: 50%;
+  bottom: 104px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(420px, calc(100vw - 24px));
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(13, 17, 23, 0.82);
+  backdrop-filter: blur(10px);
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+[data-serenada-callflow].controls-hidden .participant-volume-panel {
+  opacity: 0;
+  transform: translateX(-50%) translateY(16px);
+  pointer-events: none;
+}
+
+[data-serenada-callflow] .participant-volume-row {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  color: #c9d1d9;
+  font-size: 12px;
+}
+
+[data-serenada-callflow] .participant-volume-label {
+  min-width: 56px;
+  max-width: 120px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-serenada-callflow] .participant-volume-slider {
+  width: 100%;
+  accent-color: var(--serenada-accent);
+}
+
+[data-serenada-callflow] .participant-volume-value {
+  width: 40px;
+  text-align: right;
+  color: #8b949e;
+  font-variant-numeric: tabular-nums;
+}
+
 [data-serenada-callflow].controls-hidden .video-local-container.pip,
 [data-serenada-callflow].controls-hidden .video-remote-container.pip {
   bottom: 20px;
