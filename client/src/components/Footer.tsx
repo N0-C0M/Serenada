@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Github, Activity, Download, Heart } from 'lucide-react';
+import { Github, Activity, Download } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useToast } from '../contexts/ToastContext';
 
@@ -85,16 +85,6 @@ const Footer: React.FC = () => {
                 <a href="/device-check" className="footer-link">
                     <Activity className="icon" />
                     {t('footer_device_check')}
-                </a>
-
-                <a
-                    href="https://dalink.to/nocomdev"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="footer-link"
-                >
-                    <Heart className="icon" />
-                    {t('footer_support_us')}
                 </a>
 
                 {!isStandalone && (
