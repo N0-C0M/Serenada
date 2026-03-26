@@ -104,6 +104,16 @@ The native iOS app lives in `client-ios/`.
 iOS universal links are enabled for `serenada.app` and `serenada-app.ru` via associated domains plus `/.well-known/apple-app-site-association`.
 Note: iOS Simulator can run signaling and call flow, but local camera preview reliability varies by host setup; use a physical iPhone to validate local camera capture.
 
+### Windows Floating Overlay Prototype (Python)
+
+A minimal Windows overlay prototype lives in `samples/windows/`.
+
+```bash
+python samples/windows/voice_chat_overlay.py
+```
+
+This sample is UI-only: it opens a call link in the browser and simulates in-call control state in a floating panel.
+
 ### Production Deployment
 
 See [DEPLOY.md](DEPLOY.md) for detailed self-hosting instructions.
