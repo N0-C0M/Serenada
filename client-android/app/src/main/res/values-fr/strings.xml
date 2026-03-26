@@ -61,6 +61,8 @@
     <string name="settings_call_defaults">Préférences d\'appel</string>
     <string name="settings_hd_video_experimental">Vidéo HD (expérimental)</string>
     <string name="settings_hd_video_experimental_info">Active une meilleure qualité pour la caméra et le mode composite. Peut augmenter l\'utilisation CPU.</string>
+    <string name="settings_call_pip">Floating call window (PiP)</string>
+    <string name="settings_call_pip_info">When enabled, minimizing an active call keeps it in a floating picture-in-picture window.</string>
     <string name="settings_error_invalid_server_host">Cet hôte est inaccessible ou ne semble pas être un serveur Serenada.</string>
     <string name="settings_app_version">Version de l\'application : %1$s</string>
 
@@ -144,6 +146,9 @@
     <string name="call_invite_to_room">Inviter à l\'appel</string>
     <string name="call_invite_sent">Invitation envoyée</string>
     <string name="call_invite_failed">Échec de l\'envoi de l\'invitation</string>
+    <string name="call_pip_action_toggle_microphone">Toggle microphone</string>
+    <string name="call_pip_action_toggle_camera">Toggle camera</string>
+    <string name="call_pip_action_end_call">End call</string>
     <string name="push_notification_invite_body">Vous avez été invité dans une salle.</string>
     <string name="settings_invites_title">Invitations</string>
     <string name="settings_invite_notifications">Notifications d\'invitation</string>

@@ -70,6 +70,10 @@ class CallManager(context: Context) : RoomWatcherDelegate {
         mutableStateOf(settingsStore.isHdVideoExperimentalEnabled)
     val isHdVideoExperimentalEnabled: State<Boolean> = _isHdVideoExperimentalEnabled
 
+    private val _isCallPictureInPictureEnabled =
+        mutableStateOf(settingsStore.isCallPictureInPictureEnabled)
+    val isCallPictureInPictureEnabled: State<Boolean> = _isCallPictureInPictureEnabled
+
     private val _recentCalls = mutableStateOf<List<RecentCall>>(emptyList())
     val recentCalls: State<List<RecentCall>> = _recentCalls
 
@@ -339,6 +343,11 @@ class CallManager(context: Context) : RoomWatcherDelegate {
     fun updateHdVideoExperimental(enabled: Boolean) {
         settingsStore.isHdVideoExperimentalEnabled = enabled
         _isHdVideoExperimentalEnabled.value = enabled
+    }
+
+    fun updateCallPictureInPicture(enabled: Boolean) {
+        settingsStore.isCallPictureInPictureEnabled = enabled
+        _isCallPictureInPictureEnabled.value = enabled
     }
 
     fun updateSavedRoomsShownFirst(enabled: Boolean) {

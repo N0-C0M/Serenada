@@ -64,6 +64,12 @@ class SettingsStore(context: Context) {
             prefs.edit().putBoolean(KEY_HD_VIDEO_EXPERIMENTAL_ENABLED, value).apply()
         }
 
+    var isCallPictureInPictureEnabled: Boolean
+        get() = prefs.getBoolean(KEY_CALL_PICTURE_IN_PICTURE_ENABLED, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_CALL_PICTURE_IN_PICTURE_ENABLED, value).apply()
+        }
+
     var areSavedRoomsShownFirst: Boolean
         get() = prefs.getBoolean(KEY_SAVED_ROOMS_SHOWN_FIRST, false)
         set(value) {
@@ -102,6 +108,7 @@ class SettingsStore(context: Context) {
         private const val KEY_DEFAULT_CAMERA_ENABLED = "default_camera_enabled"
         private const val KEY_DEFAULT_MIC_ENABLED = "default_mic_enabled"
         private const val KEY_HD_VIDEO_EXPERIMENTAL_ENABLED = "hd_video_experimental_enabled"
+        private const val KEY_CALL_PICTURE_IN_PICTURE_ENABLED = "call_picture_in_picture_enabled"
         private const val KEY_SAVED_ROOMS_SHOWN_FIRST = "saved_rooms_shown_first"
         private const val KEY_ROOM_INVITE_NOTIFICATIONS_ENABLED = "room_invite_notifications_enabled"
         private const val KEY_REMOTE_VIDEO_FIT_COVER = "remote_video_fit_cover"

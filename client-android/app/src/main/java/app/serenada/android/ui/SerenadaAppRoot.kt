@@ -267,11 +267,13 @@ fun SerenadaAppRoot(
                         isDefaultCameraEnabled = callManager.isDefaultCameraEnabled.value,
                         isDefaultMicrophoneEnabled = callManager.isDefaultMicrophoneEnabled.value,
                         isHdVideoExperimentalEnabled = callManager.isHdVideoExperimentalEnabled.value,
+                        isCallPictureInPictureEnabled = callManager.isCallPictureInPictureEnabled.value,
                         areSavedRoomsShownFirst = areSavedRoomsShownFirst,
                         areRoomInviteNotificationsEnabled = areRoomInviteNotificationsEnabled,
                         onDefaultCameraChange = { callManager.updateDefaultCamera(it) },
                         onDefaultMicrophoneChange = { callManager.updateDefaultMicrophone(it) },
                         onHdVideoExperimentalChange = { callManager.updateHdVideoExperimental(it) },
+                        onCallPictureInPictureChange = { callManager.updateCallPictureInPicture(it) },
                         onSavedRoomsShownFirstChange = { callManager.updateSavedRoomsShownFirst(it) },
                         onRoomInviteNotificationsChange = { callManager.updateRoomInviteNotifications(it) },
                         onOpenDiagnostics = {

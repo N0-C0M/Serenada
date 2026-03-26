@@ -20,6 +20,7 @@ Native Android (Kotlin) client for Serenada WebRTC calls. This app mirrors the c
 - Settings flow to create shareable saved-room links; opening such a link in the app adds the room with the creator-defined name and uses per-room host overrides for non-default hosts
 - Deep links for `https://serenada.app/call/*`
 - Foreground service to keep active calls running in the background
+- Optional Android Picture-in-Picture floating call window for active calls (Settings -> Call defaults), with PiP quick actions for microphone, camera, and end call
 - Settings screen to change server host, with host validation on save
 - Join attempts include a timeout guard so the app does not stay in `Joining room...` indefinitely on signaling/connectivity failures
 - Android system back support for internal navigation (toolbar back button, hardware back, and edge-swipe gesture behave the same across Settings/Diagnostics/Join-by-code/Error screens)
@@ -213,7 +214,10 @@ adb shell am start -a android.intent.action.VIEW -d "https://serenada.app/call/R
 ## Settings
 Server host is configurable in the in-app Settings screen (Join screen → Settings).
 On Save, the app validates `https://<host>/api/room-id` and only persists hosts that respond with the expected Serenada room ID payload.
-`Call defaults` also include `HD Video (experimental)`; when disabled (default), camera capture uses legacy `640x480`, and when enabled the app applies higher per-mode camera/composite targets.
+`Call defaults` also include `HD Video (experimental)` and `Floating call window (PiP)`.
+When `HD Video (experimental)` is disabled (default), camera capture uses legacy `640x480`, and when enabled the app applies higher per-mode camera/composite targets.
+When `Floating call window (PiP)` is enabled, minimizing the app during an active call moves the call into Android Picture-in-Picture.
+PiP provides quick actions for toggling microphone/camera and ending the call.
 `Saved rooms` settings include:
 - A switch to show saved rooms above or below recent calls on the home screen
 The app version is shown at the bottom of the Settings screen for quick support/debug reference.

@@ -69,6 +69,7 @@ fun SettingsScreen(
     isDefaultCameraEnabled: Boolean,
     isDefaultMicrophoneEnabled: Boolean,
     isHdVideoExperimentalEnabled: Boolean,
+    isCallPictureInPictureEnabled: Boolean,
     areSavedRoomsShownFirst: Boolean,
     areRoomInviteNotificationsEnabled: Boolean,
     hostError: String?,
@@ -78,6 +79,7 @@ fun SettingsScreen(
     onDefaultCameraChange: (Boolean) -> Unit,
     onDefaultMicrophoneChange: (Boolean) -> Unit,
     onHdVideoExperimentalChange: (Boolean) -> Unit,
+    onCallPictureInPictureChange: (Boolean) -> Unit,
     onSavedRoomsShownFirstChange: (Boolean) -> Unit,
     onRoomInviteNotificationsChange: (Boolean) -> Unit,
     onOpenDiagnostics: () -> Unit,
@@ -330,6 +332,17 @@ fun SettingsScreen(
                         subLabel = stringResource(R.string.settings_hd_video_experimental_info),
                         checked = isHdVideoExperimentalEnabled,
                         onCheckedChange = onHdVideoExperimentalChange
+                    )
+
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+
+                    SettingsSwitchRow(
+                        label = stringResource(R.string.settings_call_pip),
+                        subLabel = stringResource(R.string.settings_call_pip_info),
+                        checked = isCallPictureInPictureEnabled,
+                        onCheckedChange = onCallPictureInPictureChange
                     )
                 }
 

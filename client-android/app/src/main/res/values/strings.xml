@@ -61,6 +61,8 @@
     <string name="settings_call_defaults">Call defaults</string>
     <string name="settings_hd_video_experimental">HD Video (experimental)</string>
     <string name="settings_hd_video_experimental_info">Enable higher-quality camera and composite modes. May increase CPU usage.</string>
+    <string name="settings_call_pip">Floating call window (PiP)</string>
+    <string name="settings_call_pip_info">When enabled, minimizing an active call keeps it in a floating picture-in-picture window.</string>
     <string name="settings_error_invalid_server_host">This host is unreachable or is not a Serenada server.</string>
     <string name="settings_app_version">App version: %1$s</string>
 
@@ -126,6 +128,9 @@
     <string name="call_invite_sent">Invite sent</string>
     <string name="call_invite_failed">Failed to send invite</string>
     <string name="call_share_link_chooser">Share call link</string>
+    <string name="call_pip_action_toggle_microphone">Toggle microphone</string>
+    <string name="call_pip_action_toggle_camera">Toggle camera</string>
+    <string name="call_pip_action_end_call">End call</string>
 
     <string name="notification_call_title">Serenada call</string>
     <string name="notification_call_status_channel">Call status</string>
