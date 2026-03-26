@@ -75,6 +75,10 @@ const Home: React.FC = () => {
                     {t('start_call')}
                 </button>
 
+                <button onClick={() => navigate('/overlay')} className="btn-secondary overlay-launch-btn">
+                    Game Overlay
+                </button>
+
                 <RecentCalls calls={recentCalls} roomStatuses={roomStatuses} savedRooms={savedRooms} onCallUpdate={loadData} />
                 <SavedRooms rooms={savedRooms} roomStatuses={roomStatuses} onRoomUpdate={loadData} />
             </div>
